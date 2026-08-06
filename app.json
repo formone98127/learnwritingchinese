@@ -3,7 +3,7 @@
     "name": "learnwritingchinese",
     "slug": "learnwritingchinese",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "learnwritingchinese",
     "userInterfaceStyle": "automatic",
@@ -38,11 +38,19 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ef2bb36b-416b-4d1d-8d16-73d92c736048"
+      }
+    },
+    "owner": "formone98127"
   }
 }

@@ -1,0 +1,530 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { DemoPlayer } from '@/components/DemoPlayer';
+import { StrokeChar } from '@/components/StrokeChar';
+import { StrokeFormula } from '@/components/StrokeFormula';
+import { TracePad } from '@/components/TracePad';
+import { Colors } from '@/constants/colors';
+import { STROKE_DATA } from '@/data/characters';
+import { LEVELS, levelStars, isLevelMastered } from '@/data/curriculum';
+import { STROKE_NAME_OVERRIDES } from '@/data/strokeNames';
+import { STROKE_RULES } from '@/data/strokeRules';
+import { useProgress } from '@/lib/progress';
+import { playSound } from '@/lib/sounds';
+import { speakChar, speakPraise, stopSpeech } from '@/lib/speech';
+import { buildStrokes } from '@/lib/strokeGeometry';
+
+type Phase = 'intro' | 'follow' | 'test' | 'charDone' | 'levelDone';
+
+export default function LessonScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const { completed, stars: allStars, markCharComplete } = useProgress();
+
+  const levelIndex = LEVELS.findIndex((l) => l.id === id);
+  const level = LEVELS[levelIndex];
+
+  const [charIdx, setCharIdx] = useState(0);
+  const [phase, setPhase] = useState<Phase>('intro');
+  const [testMode, setTestMode] = useState(false);
+  const [demoStroke, setDemoStroke] = useState(0);
+  const [strokeIdx, setStrokeIdx] = useState(0);
+  const [charStars, setCharStars] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scoresRef = useRef<number[]>([]);
+
+  const char = level?.chars[charIdx];
+  const strokes = useMemo(
+    () =>
+      char && STROKE_DATA[char]
+        ? buildStrokes(STROKE_DATA[char], STROKE_NAME_OVERRIDES[char])
+        : [],
+    [char],
+  );
+
+  const landscape = width > height && !testMode;
+  // fit everything on one screen: budget the remaining height between the
+  // demo box and the trace pad instead of scrolling
+  const chromeV = insets.top + insets.bottom + 12 + 44 + 46; // screen padding + header + char strip
+  let demoSize = 0;
+  let traceSize: number;
+  if (landscape) {
+    demoSize = Math.min((height - chromeV - 60) * 0.58, width * 0.3);
+    traceSize = Math.min(height - chromeV - 40, width * 0.44);
+  } else if (testMode) {
+    traceSize = Math.min(width * 0.92, height - chromeV - 140);
+  } else {
+    const avail = height - chromeV - 136; // stroke label + 口訣 + skip button
+    demoSize = Math.min(width * 0.44, avail * 0.38);
+    traceSize = Math.min(width * 0.86, avail * 0.62);
+  }
+
+  useEffect(() => {
+    return () => {
+      stopSpeech();
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  // auto-advance shortly after a char is completed
+  const advanceRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    if (phase !== 'charDone') return;
+    const t = setTimeout(() => advanceRef.current(), 1500);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  if (!level || !char || strokes.length === 0) {
+    return (
+      <View style={[styles.center, { paddingTop: insets.top }]}>
+        <Text style={styles.errorText}>搵唔到呢一關</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.primaryBtn}>
+          <Text style={styles.primaryBtnText}>返回</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const doneChars = completed[level.id] ?? [];
+
+  const goToChar = (next: number) => {
+    stopSpeech();
+    setCharIdx(next);
+    setStrokeIdx(0);
+    setDemoStroke(0);
+    setCharStars(0);
+    scoresRef.current = [];
+    setPhase(testMode ? 'test' : 'intro');
+  };
+
+  const toggleMode = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    const next = !testMode;
+    setTestMode(next);
+    stopSpeech();
+    setStrokeIdx(0);
+    setDemoStroke(0);
+    setCharStars(0);
+    scoresRef.current = [];
+    setPhase(next ? 'test' : 'intro');
+  };
+
+  const startFollow = () => {
+    stopSpeech();
+    setStrokeIdx(0);
+    setPhase('follow');
+  };
+
+  const finishChar = () => {
+    const scores = scoresRef.current;
+    const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+    const stars = avg >= 0.75 ? 3 : avg >= 0.5 ? 2 : 1;
+    setCharStars(stars);
+    setPhase('charDone');
+    playSound('char-done');
+    speakChar(char);
+    markCharComplete(level.id, char, stars);
+  };
+
+  const handleStrokeDone = (score: number) => {
+    scoresRef.current = [...scoresRef.current, score];
+    const next = strokeIdx + 1;
+    if (next < strokes.length) {
+      setStrokeIdx(next);
+      return;
+    }
+    finishChar();
+  };
+
+  const advance = () => {
+    if (charIdx + 1 < level.chars.length) {
+      goToChar(charIdx + 1);
+    } else {
+      setPhase('levelDone');
+      playSound('level-done');
+      speakPraise();
+    }
+  };
+  advanceRef.current = advance;
+
+  const activeStroke =
+    phase === 'intro'
+      ? strokes[Math.min(demoStroke, strokes.length - 1)]
+      : phase === 'follow'
+        ? strokes[strokeIdx]
+        : null;
+  const activeStrokeNum =
+    phase === 'intro' ? Math.min(demoStroke + 1, strokes.length) : strokeIdx + 1;
+
+  const poemLine =
+    level.kind === 'poem' && level.poem
+      ? level.poem.lines.find((l) => l.includes(char))
+      : undefined;
+
+  return (
+    <View
+      style={[styles.screen, { paddingTop: insets.top + 4, paddingBottom: insets.bottom + 8 }]}
+    >
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+          <Ionicons name="chevron-back" size={26} color={Colors.ink} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{level.title}</Text>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={[styles.modeToggle, testMode && styles.modeToggleActive]}
+            onPress={toggleMode}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={testMode ? 'school' : 'create'}
+              size={14}
+              color={testMode ? '#FFFDF7' : Colors.inkLight}
+            />
+            <Text style={[styles.modeToggleText, testMode && styles.modeToggleTextActive]}>
+              {testMode ? '測試' : '學習'}
+            </Text>
+          </TouchableOpacity>
+          <Text style={styles.headerCount}>
+            {Math.min(charIdx + 1, level.chars.length)} / {level.chars.length}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.charStripWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.charStrip}>
+            {level.chars.map((c, i) => {
+              const state =
+                i === charIdx ? 'current' : doneChars.includes(c) ? 'done' : 'todo';
+              return (
+                <TouchableOpacity
+                  key={`${c}-${i}`}
+                  onPress={() => goToChar(i)}
+                  style={[
+                    styles.charChip,
+                    state === 'current' && styles.charChipCurrent,
+                    state === 'done' && styles.charChipDone,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.charChipText,
+                      state === 'current' && styles.charChipTextCurrent,
+                      state === 'done' && styles.charChipTextDone,
+                    ]}
+                  >
+                    {c}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
+      </View>
+
+      <View style={styles.body}>
+        {poemLine && (
+          <Text style={styles.poemLine}>
+            {poemLine.split('').map((c, ci) => (
+              <Text key={ci} style={c === char ? styles.poemCharActive : undefined}>
+                {c}
+              </Text>
+            ))}
+          </Text>
+        )}
+
+        <View style={[styles.bodyRow, landscape && styles.bodyRowLandscape]}>
+          <View style={styles.leftCol}>
+            <View style={styles.stageLabelRow}>
+          {activeStroke && (
+            <Text style={styles.strokeLabel}>
+              第 {activeStrokeNum} 筆{phase === 'test' ? '' : `・${activeStroke.name}`}（共{' '}
+              {strokes.length} 筆）
+            </Text>
+          )}
+            </View>
+
+        {!testMode && (
+        <View style={[styles.demoBox, { width: demoSize, height: demoSize }]}>
+          {phase === 'intro' && (
+            <DemoPlayer
+              strokes={strokes}
+              size={demoSize}
+              replayToken={charIdx}
+              mode="full"
+              onStrokeStart={setDemoStroke}
+              onFinished={() => {
+                timerRef.current = setTimeout(startFollow, 500);
+              }}
+            />
+          )}
+          {phase === 'follow' && (
+            <DemoPlayer
+              strokes={strokes}
+              size={demoSize}
+              replayToken={charIdx}
+              mode="loop"
+              loopIndex={strokeIdx}
+            />
+          )}
+          {(phase === 'charDone' || phase === 'levelDone') && (
+            <StrokeChar strokes={strokes} size={demoSize} filledCount={strokes.length} />
+          )}
+        </View>
+        )}
+
+        {!testMode && <StrokeFormula rules={STROKE_RULES[char] ?? []} />}
+
+        {phase === 'charDone' ? (
+          <>
+            <View style={styles.starsRow}>
+              {[1, 2, 3].map((n) => (
+                <Ionicons
+                  key={n}
+                  name="star"
+                  size={30}
+                  color={n <= charStars ? Colors.gold : Colors.inkFaint}
+                />
+              ))}
+            </View>
+            <TouchableOpacity style={styles.primaryBtn} onPress={advance}>
+              <Text style={styles.primaryBtnText}>
+                {charIdx + 1 < level.chars.length ? '下一個字' : '完成關卡'}
+              </Text>
+            </TouchableOpacity>
+          </>
+        ) : phase === 'test' ? (
+          <View style={styles.btnRow}>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => goToChar(charIdx)}>
+              <Text style={styles.secondaryBtnText}>重寫此字</Text>
+            </TouchableOpacity>
+          </View>
+        ) : phase === 'intro' ? (
+          <View style={styles.btnRow}>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={startFollow}>
+              <Text style={styles.secondaryBtnText}>跳過示範</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+          </View>
+
+        {(phase === 'follow' || phase === 'intro' || phase === 'test') && (
+          <View style={styles.practiceBox}>
+            <View>
+              <TracePad
+                strokes={strokes}
+                size={traceSize}
+                strokeIndex={strokeIdx}
+                onStrokeDone={handleStrokeDone}
+                charToken={`${level.id}-${charIdx}`}
+                disabled={phase !== 'follow' && phase !== 'test'}
+                hideGuides={phase === 'test'}
+              />
+              {phase === 'intro' && (
+                <View style={styles.veil} pointerEvents="none">
+                  <Text style={styles.veilText}>睇住上面先，跟住就到你寫</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+        </View>
+      </View>
+
+      {phase === 'levelDone' && (
+        <View style={styles.overlay}>
+          <View style={styles.overlayCard}>
+            <Ionicons
+              name={isLevelMastered(level, allStars) ? 'medal' : 'ribbon'}
+              size={56}
+              color={Colors.gold}
+            />
+            <Text style={styles.overlayTitle}>關卡完成！</Text>
+            <Text style={styles.overlaySubtitle}>
+              你已經寫晒「{level.title}」嘅 {level.chars.length} 個字
+            </Text>
+            <Text style={styles.overlayStars}>
+              ★ {levelStars(level, allStars)} / {level.chars.length * 3}
+            </Text>
+            {isLevelMastered(level, allStars) && (
+              <Text style={styles.overlayMedal}>滿星勳章攞到！</Text>
+            )}
+            {levelIndex + 1 < LEVELS.length && (
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => router.replace(`/lesson/${LEVELS[levelIndex + 1].id}`)}
+              >
+                <Text style={styles.primaryBtnText}>下一關：{LEVELS[levelIndex + 1].title}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { marginTop: 12 }]}
+              onPress={() => router.back()}
+            >
+              <Text style={styles.secondaryBtnText}>返回首頁</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: Colors.paper },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  errorText: { fontSize: 16, color: Colors.inkLight },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  backBtn: { padding: 4 },
+  headerTitle: { flex: 1, fontSize: 19, fontWeight: '700', color: Colors.ink },
+  headerCount: { fontSize: 15, color: Colors.inkLight, fontWeight: '600' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  modeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.inkFaint,
+  },
+  modeToggleActive: { backgroundColor: Colors.vermillion, borderColor: Colors.vermillion },
+  modeToggleText: { fontSize: 12, color: Colors.inkLight, fontWeight: '600' },
+  modeToggleTextActive: { color: '#FFFDF7' },
+  charStripWrap: { marginTop: 6 },
+  charStrip: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  charChip: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: Colors.paperDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  charChipCurrent: {
+    backgroundColor: Colors.vermillion,
+  },
+  charChipDone: {
+    backgroundColor: Colors.card,
+    borderWidth: 1.5,
+    borderColor: Colors.jade,
+  },
+  charChipText: { fontSize: 19, color: Colors.inkLight },
+  charChipTextCurrent: { color: '#FFFDF7', fontWeight: '700' },
+  charChipTextDone: { color: Colors.jade, fontWeight: '700' },
+  body: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  bodyRow: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    width: '100%',
+  },
+  bodyRowLandscape: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    gap: 28,
+  },
+  leftCol: { alignItems: 'center' },
+  starsRow: { flexDirection: 'row', gap: 6, marginTop: 6 },
+  poemLine: {
+    fontSize: 16,
+    color: Colors.inkLight,
+    letterSpacing: 3,
+    marginBottom: 2,
+  },
+  poemCharActive: { color: Colors.vermillion, fontWeight: '700' },
+  stageLabelRow: { alignItems: 'center', marginBottom: 2, gap: 1 },
+  strokeLabel: { fontSize: 14, color: Colors.inkLight },
+  demoBox: {
+    backgroundColor: Colors.card,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  btnRow: { flexDirection: 'row', gap: 12, marginTop: 4, marginBottom: 2 },
+  primaryBtn: {
+    backgroundColor: Colors.vermillion,
+    borderRadius: 14,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  primaryBtnText: { color: '#FFFDF7', fontSize: 16, fontWeight: '700' },
+  secondaryBtn: {
+    borderWidth: 1.5,
+    borderColor: Colors.inkFaint,
+    borderRadius: 14,
+    paddingHorizontal: 22,
+    paddingVertical: 9,
+  },
+  secondaryBtnText: { color: Colors.inkLight, fontSize: 15, fontWeight: '600' },
+  practiceBox: { marginTop: 4, alignItems: 'center' },
+  veil: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(246,240,228,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  veilText: { color: Colors.inkLight, fontSize: 15, fontWeight: '600' },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(38,34,28,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  overlayCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    width: '100%',
+  },
+  overlayTitle: { fontSize: 26, fontWeight: '700', color: Colors.ink, marginTop: 12 },
+  overlayStars: { fontSize: 17, color: Colors.gold, fontWeight: '700', marginTop: 6 },
+  overlayMedal: { fontSize: 15, color: Colors.vermillion, fontWeight: '700', marginTop: 4 },
+  overlaySubtitle: {
+    fontSize: 14,
+    color: Colors.inkLight,
+    marginTop: 8,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+});
