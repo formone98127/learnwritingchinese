@@ -11,6 +11,13 @@ import type { Point, StrokeInfo } from '@/lib/types';
 import { MiGrid } from './MiGrid';
 import { StrokeChar } from './StrokeChar';
 
+export type StrokeError =
+  | 'wrong-start'
+  | 'wrong-start-test'
+  | 'sloppy'
+  | 'not-standard'
+  | 'wrong-direction';
+
 type Props = {
   strokes: StrokeInfo[];
   size: number;
@@ -24,14 +31,21 @@ type Props = {
   disabled?: boolean;
   /** test mode: hide start dot and dashed median guide */
   hideGuides?: boolean;
+  /** bump to flash the next-stroke ghost even when guides are hidden */
+  hintFlash?: number;
+  /** custom error hint text overrides */
+  errorHints?: Partial<Record<StrokeError, string>>;
 };
 
 const HINT_DEFAULT = '';
 const HINT_TEST = '';
-const HINT_WRONG_START = '要由紅點嗰度起筆呀';
-const HINT_WRONG_START_TEST = '起筆位置唔啱，再諗下先';
-const HINT_SLOPPY = '寫歪咗，呢筆重新寫';
-const HINT_NOT_STANDARD = '唔夠標準，再寫多次';
+const DEFAULT_ERROR_HINT: Record<StrokeError, string> = {
+  'wrong-start': '要由紅點嗰度起筆呀',
+  'wrong-start-test': '起筆位置唔啱，再諗下先',
+  sloppy: '寫歪咗，呢筆重新寫',
+  'not-standard': '唔夠標準，再寫多次',
+  'wrong-direction': '方向倒轉咗，跟返箭嘴寫',
+};
 
 export function TracePad({
   strokes,
@@ -41,11 +55,14 @@ export function TracePad({
   charToken,
   disabled = false,
   hideGuides = false,
+  hintFlash = 0,
+  errorHints,
 }: Props) {
+  const hints = { ...DEFAULT_ERROR_HINT, ...errorHints };
   const hintDefault = hideGuides ? HINT_TEST : HINT_DEFAULT;
-  const hintWrongStart = hideGuides ? HINT_WRONG_START_TEST : HINT_WRONG_START;
   const [trace, setTrace] = useState<Point[]>([]);
   const [hint, setHint] = useState(hintDefault);
+  const [flashGhost, setFlashGhost] = useState(false);
 
   const samples = useMemo(
     () => traceSamples(strokes[strokeIndex].median, size),
@@ -96,6 +113,14 @@ export function TracePad({
     setHint(hintDefault);
   }, [strokeIndex, charToken, hintDefault]);
 
+  // flash the next-stroke ghost briefly when hintFlash bumps
+  useEffect(() => {
+    if (hintFlash === 0) return;
+    setFlashGhost(true);
+    const t = setTimeout(() => setFlashGhost(false), 1500);
+    return () => clearTimeout(t);
+  }, [hintFlash]);
+
   /** raw distance to the closest sample (uncapped) */
   function rawDistToStroke(p: Point): number {
     const s = samplesRef.current;
@@ -109,9 +134,7 @@ export function TracePad({
 
   function collectPoint(p: Point) {
     const s = samplesRef.current;
-    // dot-like strokes: a tap must cover the whole span, so collect wider
     const r = dotLikeRef.current ? radiusRef.current * 1.6 : radiusRef.current;
-    // dot-like strokes: every sample is one tap away, no forward gate
     const gate = dotLikeRef.current ? s.length : furthestRef.current + 4;
     let maxNew = -1;
     let minD = Infinity;
@@ -126,7 +149,6 @@ export function TracePad({
     }
     if (maxNew > furthestRef.current) {
       furthestRef.current = maxNew;
-      // accuracy metric = how close the finger got to the center line
       distSumRef.current += minD;
       distCountRef.current += 1;
     }
@@ -142,13 +164,11 @@ export function TracePad({
       return;
     }
     const avgDist = distCountRef.current > 0 ? distSumRef.current / distCountRef.current : 0;
-    // dot-like strokes: a tap is a perfect dot — the span would poison the metric
     const accuracy = dotLikeRef.current
       ? 1
       : 1 - Math.min(1, avgDist / (radiusRef.current * 0.55));
-    // coverage reached but the stroke is too sloppy overall → reject it
     if (accuracy < 0.1) {
-      wipeAttempt(HINT_NOT_STANDARD);
+      wipeAttempt(hints['not-standard']);
       return;
     }
     doneRef.current = true;
@@ -161,7 +181,6 @@ export function TracePad({
     onStrokeDoneRef.current(score);
   }
 
-  /** wipe a sloppy attempt immediately: no trail kept, stroke must restart */
   function wipeAttempt(hintText: string) {
     startedRef.current = false;
     restartsRef.current += 1;
@@ -185,8 +204,6 @@ export function TracePad({
         const p = { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY };
         const d0 = Math.hypot(s[0].x - p.x, s[0].y - p.y);
         const dEnd = Math.hypot(s[s.length - 1].x - p.x, s[s.length - 1].y - p.y);
-        // dot-like strokes (點): start and end are nearly the same point,
-        // so the anti-reverse dEnd check would always reject them
         if (d0 < r * 2.2 && (dotLikeRef.current || dEnd > r * 1.5)) {
           startedRef.current = true;
           traceRef.current = [p];
@@ -196,7 +213,14 @@ export function TracePad({
         } else {
           startedRef.current = false;
           wrongStartsRef.current += 1;
-          setHint(hintWrongStart);
+          // distinguish: started at the END (wrong direction) vs somewhere random
+          const hintKey: StrokeError =
+            !dotLikeRef.current && dEnd < r * 1.5
+              ? 'wrong-direction'
+              : hideGuides
+                ? 'wrong-start-test'
+                : 'wrong-start';
+          setHint(hints[hintKey]);
           playSound('wrong');
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
@@ -204,9 +228,8 @@ export function TracePad({
       onPanResponderMove: (e) => {
         if (doneRef.current || !startedRef.current) return;
         const p = { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY };
-        // clearly off the stroke → wipe the trail right away, no trace kept
         if (rawDistToStroke(p) > radiusRef.current * 2.0) {
-          wipeAttempt(HINT_SLOPPY);
+          wipeAttempt(hints.sloppy);
           return;
         }
         traceRef.current = [...traceRef.current, p];
@@ -216,7 +239,6 @@ export function TracePad({
       },
       onPanResponderRelease: () => {
         if (doneRef.current) return;
-        // a pure tap on a dot covers the samples without any move event
         if (startedRef.current) tryComplete();
         if (doneRef.current) {
           startedRef.current = false;
@@ -236,6 +258,7 @@ export function TracePad({
 
   const guidePath = useMemo(() => pointsToPath(samples), [samples]);
   const tracePath = trace.length > 1 ? pointsToPath(trace) : '';
+  const showGhost = !hideGuides || flashGhost;
 
   return (
     <View>
@@ -248,7 +271,7 @@ export function TracePad({
           highlightIndex={hideGuides ? -1 : strokeIndex}
         />
         <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-          {!hideGuides && (
+          {showGhost && (
             <>
               <Path
                 d={guidePath}

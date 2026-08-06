@@ -28,50 +28,78 @@ function wav(samples) {
 
 const sine = (freq, t) => Math.sin(2 * Math.PI * freq * t);
 
-/** note: {freq, start, dur, vol} with exponential decay */
+/** note: {freq, start, dur, vol, overtones} with soft attack + exp decay */
 function render(notes, totalDur) {
   const n = Math.floor(SR * totalDur);
   const out = new Float64Array(n);
-  for (const { freq, start, dur, vol = 0.5, glide } of notes) {
+  for (const { freq, start, dur, vol = 0.5, glide, overtones = [], attack = 0.008 } of notes) {
     const s0 = Math.floor(start * SR);
     const s1 = Math.min(n, Math.floor((start + dur) * SR));
     for (let i = s0; i < s1; i++) {
       const t = (i - s0) / SR;
       const f = glide ? freq + (glide - freq) * (t / dur) : freq;
-      const env = Math.exp(-3.2 * (t / dur));
-      out[i] += sine(f, t) * vol * env;
+      const atk = t < attack ? t / attack : 1;
+      const env = atk * Math.exp(-2.4 * (t / dur));
+      let s = sine(f, t);
+      for (let o = 0; o < overtones.length; o++) {
+        s += overtones[o] * sine(f * (o + 2), t);
+      }
+      out[i] += s * vol * env;
     }
+  }
+  // gentle limiter to avoid clipping when notes overlap
+  for (let i = 0; i < n; i++) {
+    if (out[i] > 1) out[i] = 1;
+    if (out[i] < -1) out[i] = -1;
   }
   return out;
 }
 
+// C5=523, D5=587, E5=659, G5=784, C6=1047, E6=1319, G6=1568
 const SOUNDS = {
-  // short bright ding on each correct stroke
-  'stroke-done': render([{ freq: 988, start: 0, dur: 0.28, vol: 0.5 }], 0.3),
-  // two-note chime on char completion
+  // bright bell-like ding with sparkle on each correct stroke
+  'stroke-done': render(
+    [
+      { freq: 1047, start: 0, dur: 0.4, vol: 0.42, overtones: [0.25, 0.12] },
+      { freq: 1568, start: 0.02, dur: 0.3, vol: 0.12 },
+    ],
+    0.45,
+  ),
+  // ascending triad (C-E-G-C) with shimmer — a small "yay!"
   'char-done': render(
     [
-      { freq: 659, start: 0, dur: 0.18, vol: 0.5 },
-      { freq: 988, start: 0.14, dur: 0.35, vol: 0.5 },
+      { freq: 523, start: 0, dur: 0.16, vol: 0.4, overtones: [0.15] },
+      { freq: 659, start: 0.1, dur: 0.16, vol: 0.4, overtones: [0.15] },
+      { freq: 784, start: 0.2, dur: 0.18, vol: 0.45, overtones: [0.18] },
+      { freq: 1047, start: 0.32, dur: 0.5, vol: 0.5, overtones: [0.25, 0.1] },
+      { freq: 1568, start: 0.36, dur: 0.4, vol: 0.15 },
     ],
-    0.55,
+    0.85,
   ),
-  // little arpeggio on level completion
+  // triumphant fanfare — rising arpeggio + sustained high chord
   'level-done': render(
     [
-      { freq: 523, start: 0, dur: 0.16, vol: 0.5 },
-      { freq: 659, start: 0.13, dur: 0.16, vol: 0.5 },
-      { freq: 784, start: 0.26, dur: 0.16, vol: 0.5 },
-      { freq: 1047, start: 0.39, dur: 0.5, vol: 0.55 },
+      { freq: 523, start: 0, dur: 0.18, vol: 0.4, overtones: [0.15] },
+      { freq: 659, start: 0.14, dur: 0.18, vol: 0.4, overtones: [0.15] },
+      { freq: 784, start: 0.28, dur: 0.18, vol: 0.45, overtones: [0.18] },
+      { freq: 1047, start: 0.42, dur: 0.7, vol: 0.5, overtones: [0.25, 0.12] },
+      { freq: 1319, start: 0.46, dur: 0.6, vol: 0.3, overtones: [0.12] },
+      { freq: 1568, start: 0.5, dur: 0.5, vol: 0.18 },
     ],
-    0.95,
+    1.25,
   ),
-  // low buzz on wrong start
-  'wrong': render([{ freq: 174, glide: 140, start: 0, dur: 0.18, vol: 0.4 }], 0.2),
+  // soft gentle "uh-oh" — not punitive, just a nudge
+  'wrong': render(
+    [
+      { freq: 392, glide: 330, start: 0, dur: 0.14, vol: 0.32, overtones: [0.08] },
+      { freq: 294, glide: 247, start: 0.12, dur: 0.22, vol: 0.28, overtones: [0.06] },
+    ],
+    0.35,
+  ),
 };
 
 await mkdir(path.resolve('assets/sounds'), { recursive: true });
 for (const [name, samples] of Object.entries(SOUNDS)) {
   await writeFile(path.resolve('assets/sounds', `${name}.wav`), wav(samples));
-  console.log(`ok ${name}.wav`);
+  console.log(`ok ${name}.wav (${(samples.length / SR).toFixed(2)}s)`);
 }

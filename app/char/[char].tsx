@@ -18,6 +18,7 @@ import { STROKE_DATA } from '@/data/characters';
 import { JYUTPING } from '@/data/jyutping';
 import { STROKE_NAME_OVERRIDES } from '@/data/strokeNames';
 import { STROKE_RULES } from '@/data/strokeRules';
+import { CHAR_RADICAL, RADICAL_NAME } from '@/data/radicals';
 import { playSound } from '@/lib/sounds';
 import { speakChar, stopSpeech } from '@/lib/speech';
 import { buildStrokes } from '@/lib/strokeGeometry';
@@ -57,7 +58,7 @@ export default function CharScreen() {
     demoSize = Math.min(height - chromeV - 150, width * 0.3); // reading row + 口訣 + button
     traceSize = Math.min(height - chromeV - 50, width * 0.4);
   } else {
-    const avail = height - chromeV - 190; // reading row + 口訣 + button + label
+    const avail = height - chromeV - 210; // reading row + 口訣 (up to 2 rows) + button + label
     demoSize = Math.min(width * 0.42, avail * 0.38);
     traceSize = Math.min(width * 0.86, avail * 0.62);
   }
@@ -111,7 +112,12 @@ export default function CharScreen() {
                 <Ionicons name="volume-high" size={24} color={Colors.vermillion} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.strokeCount}>共 {strokes.length} 筆</Text>
+            <Text style={styles.strokeCount}>
+              共 {strokes.length} 筆
+              {CHAR_RADICAL[char] && RADICAL_NAME[CHAR_RADICAL[char]]
+                ? `　部首：${RADICAL_NAME[CHAR_RADICAL[char]]}`
+                : ''}
+            </Text>
 
             <View style={[styles.demoBox, { width: demoSize, height: demoSize }]}>
               <DemoPlayer

@@ -12,7 +12,7 @@ import Animated, {
 import Svg, { Path } from 'react-native-svg';
 
 import { Colors } from '@/constants/colors';
-import { speakStrokeName } from '@/lib/speech';
+import { getDemoDurationMultiplier, speakStrokeName } from '@/lib/speech';
 import { BOX, pointsToPath } from '@/lib/strokeGeometry';
 import type { StrokeInfo } from '@/lib/types';
 
@@ -76,7 +76,10 @@ export function DemoPlayer({
     const stroke = strokes[activeIndex];
     if (!stroke) return;
     const len = stroke.length * scale;
-    const duration = Math.min(1400, Math.max(480, (stroke.length / BOX) * 1100));
+    const mult = getDemoDurationMultiplier() || 1;
+    const duration = Math.max(200, Math.round(
+      Math.min(1400, Math.max(480, (stroke.length / BOX) * 1100)) * mult,
+    ));
     if (speak && (mode === 'full' || cycle === 0)) speakStrokeName(stroke.name);
     onStrokeStart?.(activeIndex);
     offset.value = len;

@@ -12,39 +12,75 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DemoPlayer } from '@/components/DemoPlayer';
+import { CharDoneCelebration } from '@/components/CharDoneCelebration';
 import { StrokeChar } from '@/components/StrokeChar';
 import { StrokeFormula } from '@/components/StrokeFormula';
-import { TracePad } from '@/components/TracePad';
+import { TracePad, type StrokeError } from '@/components/TracePad';
 import { Colors } from '@/constants/colors';
 import { STROKE_DATA } from '@/data/characters';
 import { LEVELS, levelStars, isLevelMastered } from '@/data/curriculum';
+import { JYUTPING } from '@/data/jyutping';
 import { STROKE_NAME_OVERRIDES } from '@/data/strokeNames';
 import { STROKE_RULES } from '@/data/strokeRules';
 import { useProgress } from '@/lib/progress';
 import { playSound } from '@/lib/sounds';
-import { speakChar, speakPraise, stopSpeech } from '@/lib/speech';
+import { speakChar, speakPraise, randomPraise, stopSpeech } from '@/lib/speech';
 import { buildStrokes } from '@/lib/strokeGeometry';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 
 type Phase = 'intro' | 'follow' | 'test' | 'charDone' | 'levelDone';
 
+const ERROR_HINT: Record<StrokeError, string> = {
+  'wrong-start': '要由紅點嗰度起筆呀',
+  'wrong-start-test': '起筆位置唔啱，再諗下先',
+  sloppy: '寫歪咗，呢筆重新寫',
+  'not-standard': '唔夠標準，再寫多次',
+  'wrong-direction': '方向倒轉咗，跟返箭嘴寫',
+};
+
 export default function LessonScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, mode } = useLocalSearchParams<{ id: string; mode?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const { completed, stars: allStars, markCharComplete } = useProgress();
+  const {
+    completed,
+    stars: allStars,
+    lessonState,
+    markCharComplete,
+    setLessonState,
+    recordAccuracy,
+    recordActivity,
+    markReviewed,
+  } = useProgress();
 
   const levelIndex = LEVELS.findIndex((l) => l.id === id);
   const level = LEVELS[levelIndex];
 
+  const examMode = mode === 'exam';
   const [charIdx, setCharIdx] = useState(0);
-  const [phase, setPhase] = useState<Phase>('intro');
-  const [testMode, setTestMode] = useState(false);
+  const [phase, setPhase] = useState<Phase>(examMode ? 'test' : 'intro');
+  const [testMode, setTestMode] = useState(examMode);
   const [demoStroke, setDemoStroke] = useState(0);
   const [strokeIdx, setStrokeIdx] = useState(0);
   const [charStars, setCharStars] = useState(0);
+  const [praise, setPraise] = useState('寫得好！');
+  const [hintFlash, setHintFlash] = useState(0); // bump to flash next-stroke ghost
+  const [hintUsed, setHintUsed] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scoresRef = useRef<number[]>([]);
+  const resumedRef = useRef(false);
+  const celebrationRef = useRef<View>(null);
+
+  const shareAchievement = async () => {
+    try {
+      const uri = await captureRef(celebrationRef, { format: 'png', quality: 0.9 });
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri);
+    } catch {
+      // sharing unavailable — ignore
+    }
+  };
 
   const char = level?.chars[charIdx];
   const strokes = useMemo(
@@ -56,9 +92,7 @@ export default function LessonScreen() {
   );
 
   const landscape = width > height && !testMode;
-  // fit everything on one screen: budget the remaining height between the
-  // demo box and the trace pad instead of scrolling
-  const chromeV = insets.top + insets.bottom + 12 + 44 + 46; // screen padding + header + char strip
+  const chromeV = insets.top + insets.bottom + 12 + 44 + 46;
   let demoSize = 0;
   let traceSize: number;
   if (landscape) {
@@ -67,7 +101,7 @@ export default function LessonScreen() {
   } else if (testMode) {
     traceSize = Math.min(width * 0.92, height - chromeV - 140);
   } else {
-    const avail = height - chromeV - 136; // stroke label + 口訣 + skip button
+    const avail = height - chromeV - 168;
     demoSize = Math.min(width * 0.44, avail * 0.38);
     traceSize = Math.min(width * 0.86, avail * 0.62);
   }
@@ -78,6 +112,28 @@ export default function LessonScreen() {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
+
+  // resume mid-lesson once, when data + level are ready
+  useEffect(() => {
+    if (!level || resumedRef.current) return;
+    resumedRef.current = true;
+    const saved = lessonState[level.id];
+    if (saved && saved.charIdx > 0 && saved.charIdx < level.chars.length) {
+      setCharIdx(saved.charIdx);
+      setPhase(examMode ? 'test' : saved.phase === 'test' ? 'test' : 'intro');
+      setTestMode(examMode || saved.phase === 'test');
+    }
+  }, [level, lessonState, examMode]);
+
+  // persist position whenever it changes (skip the completion overlay states)
+  useEffect(() => {
+    if (!level) return;
+    if (phase === 'levelDone') {
+      setLessonState(level.id, null);
+      return;
+    }
+    setLessonState(level.id, { charIdx, phase: testMode ? 'test' : phase });
+  }, [level, charIdx, phase, testMode, setLessonState]);
 
   // auto-advance shortly after a char is completed
   const advanceRef = useRef<() => void>(() => {});
@@ -106,11 +162,13 @@ export default function LessonScreen() {
     setStrokeIdx(0);
     setDemoStroke(0);
     setCharStars(0);
+    setHintUsed(false);
     scoresRef.current = [];
     setPhase(testMode ? 'test' : 'intro');
   };
 
   const toggleMode = () => {
+    if (examMode) return;
     if (timerRef.current) clearTimeout(timerRef.current);
     const next = !testMode;
     setTestMode(next);
@@ -118,6 +176,7 @@ export default function LessonScreen() {
     setStrokeIdx(0);
     setDemoStroke(0);
     setCharStars(0);
+    setHintUsed(false);
     scoresRef.current = [];
     setPhase(next ? 'test' : 'intro');
   };
@@ -128,15 +187,32 @@ export default function LessonScreen() {
     setPhase('follow');
   };
 
+  const undoStroke = () => {
+    if (strokeIdx === 0 || phase === 'charDone' || phase === 'levelDone') return;
+    scoresRef.current = scoresRef.current.slice(0, -1);
+    setStrokeIdx(strokeIdx - 1);
+  };
+
+  const useHint = () => {
+    setHintUsed(true);
+    setHintFlash((n) => n + 1);
+  };
+
   const finishChar = () => {
     const scores = scoresRef.current;
     const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
-    const stars = avg >= 0.75 ? 3 : avg >= 0.5 ? 2 : 1;
+    let stars = avg >= 0.75 ? 3 : avg >= 0.5 ? 2 : 1;
+    if (hintUsed) stars = Math.min(stars, 2); // hint caps the star
     setCharStars(stars);
+    const p = randomPraise();
+    setPraise(p);
     setPhase('charDone');
     playSound('char-done');
-    speakChar(char);
+    speakPraise(p);
     markCharComplete(level.id, char, stars);
+    recordAccuracy(char, avg);
+    recordActivity(char);
+    markReviewed(char);
   };
 
   const handleStrokeDone = (score: number) => {
@@ -174,6 +250,8 @@ export default function LessonScreen() {
       ? level.poem.lines.find((l) => l.includes(char))
       : undefined;
 
+  const jyutping = JYUTPING[char];
+
   return (
     <View
       style={[styles.screen, { paddingTop: insets.top + 4, paddingBottom: insets.bottom + 8 }]}
@@ -184,20 +262,22 @@ export default function LessonScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{level.title}</Text>
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={[styles.modeToggle, testMode && styles.modeToggleActive]}
-            onPress={toggleMode}
-            hitSlop={8}
-          >
-            <Ionicons
-              name={testMode ? 'school' : 'create'}
-              size={14}
-              color={testMode ? '#FFFDF7' : Colors.inkLight}
-            />
-            <Text style={[styles.modeToggleText, testMode && styles.modeToggleTextActive]}>
-              {testMode ? '測試' : '學習'}
-            </Text>
-          </TouchableOpacity>
+          {!examMode && (
+            <TouchableOpacity
+              style={[styles.modeToggle, testMode && styles.modeToggleActive]}
+              onPress={toggleMode}
+              hitSlop={8}
+            >
+              <Ionicons
+                name={testMode ? 'school' : 'create'}
+                size={14}
+                color={testMode ? '#FFFDF7' : Colors.inkLight}
+              />
+              <Text style={[styles.modeToggleText, testMode && styles.modeToggleTextActive]}>
+                {testMode ? '測試' : '學習'}
+              </Text>
+            </TouchableOpacity>
+          )}
           <Text style={styles.headerCount}>
             {Math.min(charIdx + 1, level.chars.length)} / {level.chars.length}
           </Text>
@@ -208,8 +288,7 @@ export default function LessonScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.charStrip}>
             {level.chars.map((c, i) => {
-              const state =
-                i === charIdx ? 'current' : doneChars.includes(c) ? 'done' : 'todo';
+              const state = i === charIdx ? 'current' : doneChars.includes(c) ? 'done' : 'todo';
               return (
                 <TouchableOpacity
                   key={`${c}-${i}`}
@@ -249,99 +328,124 @@ export default function LessonScreen() {
 
         <View style={[styles.bodyRow, landscape && styles.bodyRowLandscape]}>
           <View style={styles.leftCol}>
+            {/* reading row: char + jyutping, tap to hear it */}
+            <TouchableOpacity
+              style={styles.readingRow}
+              onPress={() => speakChar(char)}
+              hitSlop={8}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.readingChar}>{char}</Text>
+              {jyutping && <Text style={styles.readingJp}>{jyutping}</Text>}
+              <Ionicons name="volume-high" size={14} color={Colors.inkFaint} />
+            </TouchableOpacity>
+
             <View style={styles.stageLabelRow}>
-          {activeStroke && (
-            <Text style={styles.strokeLabel}>
-              第 {activeStrokeNum} 筆{phase === 'test' ? '' : `・${activeStroke.name}`}（共{' '}
-              {strokes.length} 筆）
-            </Text>
-          )}
-            </View>
-
-        {!testMode && (
-        <View style={[styles.demoBox, { width: demoSize, height: demoSize }]}>
-          {phase === 'intro' && (
-            <DemoPlayer
-              strokes={strokes}
-              size={demoSize}
-              replayToken={charIdx}
-              mode="full"
-              onStrokeStart={setDemoStroke}
-              onFinished={() => {
-                timerRef.current = setTimeout(startFollow, 500);
-              }}
-            />
-          )}
-          {phase === 'follow' && (
-            <DemoPlayer
-              strokes={strokes}
-              size={demoSize}
-              replayToken={charIdx}
-              mode="loop"
-              loopIndex={strokeIdx}
-            />
-          )}
-          {(phase === 'charDone' || phase === 'levelDone') && (
-            <StrokeChar strokes={strokes} size={demoSize} filledCount={strokes.length} />
-          )}
-        </View>
-        )}
-
-        {!testMode && <StrokeFormula rules={STROKE_RULES[char] ?? []} />}
-
-        {phase === 'charDone' ? (
-          <>
-            <View style={styles.starsRow}>
-              {[1, 2, 3].map((n) => (
-                <Ionicons
-                  key={n}
-                  name="star"
-                  size={30}
-                  color={n <= charStars ? Colors.gold : Colors.inkFaint}
-                />
-              ))}
-            </View>
-            <TouchableOpacity style={styles.primaryBtn} onPress={advance}>
-              <Text style={styles.primaryBtnText}>
-                {charIdx + 1 < level.chars.length ? '下一個字' : '完成關卡'}
-              </Text>
-            </TouchableOpacity>
-          </>
-        ) : phase === 'test' ? (
-          <View style={styles.btnRow}>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => goToChar(charIdx)}>
-              <Text style={styles.secondaryBtnText}>重寫此字</Text>
-            </TouchableOpacity>
-          </View>
-        ) : phase === 'intro' ? (
-          <View style={styles.btnRow}>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={startFollow}>
-              <Text style={styles.secondaryBtnText}>跳過示範</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-          </View>
-
-        {(phase === 'follow' || phase === 'intro' || phase === 'test') && (
-          <View style={styles.practiceBox}>
-            <View>
-              <TracePad
-                strokes={strokes}
-                size={traceSize}
-                strokeIndex={strokeIdx}
-                onStrokeDone={handleStrokeDone}
-                charToken={`${level.id}-${charIdx}`}
-                disabled={phase !== 'follow' && phase !== 'test'}
-                hideGuides={phase === 'test'}
-              />
-              {phase === 'intro' && (
-                <View style={styles.veil} pointerEvents="none">
-                  <Text style={styles.veilText}>睇住上面先，跟住就到你寫</Text>
-                </View>
+              {activeStroke && (
+                <Text style={styles.strokeLabel}>
+                  第 {activeStrokeNum} 筆{phase === 'test' ? '' : `・${activeStroke.name}`}（共{' '}
+                  {strokes.length} 筆）
+                </Text>
               )}
             </View>
+
+            {!testMode && (
+              <View style={[styles.demoBox, { width: demoSize, height: demoSize }]}>
+                {phase === 'intro' && (
+                  <DemoPlayer
+                    strokes={strokes}
+                    size={demoSize}
+                    replayToken={charIdx}
+                    mode="full"
+                    onStrokeStart={setDemoStroke}
+                    onFinished={() => {
+                      timerRef.current = setTimeout(startFollow, 500);
+                    }}
+                  />
+                )}
+                {phase === 'follow' && (
+                  <DemoPlayer
+                    strokes={strokes}
+                    size={demoSize}
+                    replayToken={charIdx}
+                    mode="loop"
+                    loopIndex={strokeIdx}
+                  />
+                )}
+                {(phase === 'charDone' || phase === 'levelDone') && (
+                  <StrokeChar strokes={strokes} size={demoSize} filledCount={strokes.length} />
+                )}
+              </View>
+            )}
+
+            {!testMode && <StrokeFormula rules={STROKE_RULES[char] ?? []} />}
+
+            {phase === 'charDone' ? (
+              <>
+                <View ref={celebrationRef} collapsable={false}>
+                  <CharDoneCelebration
+                    stars={charStars}
+                    praise={praise}
+                    char={char}
+                    onShare={shareAchievement}
+                  />
+                </View>
+                <TouchableOpacity style={styles.primaryBtn} onPress={advance}>
+                  <Text style={styles.primaryBtnText}>
+                    {charIdx + 1 < level.chars.length ? '下一個字' : '完成關卡'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <View style={styles.btnRow}>
+                {(phase === 'follow' || phase === 'test') && strokeIdx > 0 && (
+                  <TouchableOpacity style={styles.iconBtn} onPress={undoStroke} hitSlop={8}>
+                    <Ionicons name="arrow-undo" size={18} color={Colors.inkLight} />
+                    <Text style={styles.iconBtnText}>上一筆</Text>
+                  </TouchableOpacity>
+                )}
+                {(phase === 'follow' || phase === 'test') && (
+                  <TouchableOpacity style={styles.iconBtn} onPress={useHint} hitSlop={8}>
+                    <Ionicons name="bulb" size={18} color={Colors.gold} />
+                    <Text style={styles.iconBtnText}>提示</Text>
+                  </TouchableOpacity>
+                )}
+                {phase === 'test' && (
+                  <TouchableOpacity style={styles.secondaryBtn} onPress={() => goToChar(charIdx)}>
+                    <Text style={styles.secondaryBtnText}>重寫此字</Text>
+                  </TouchableOpacity>
+                )}
+                {phase === 'intro' && (
+                  <TouchableOpacity style={styles.secondaryBtn} onPress={startFollow}>
+                    <Text style={styles.secondaryBtnText}>跳過示範</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
           </View>
-        )}
+
+          {(phase === 'follow' || phase === 'intro' || phase === 'test') && (
+            <View style={styles.practiceBox}>
+              <View>
+                <TracePad
+                  strokes={strokes}
+                  size={traceSize}
+                  strokeIndex={strokeIdx}
+                  onStrokeDone={handleStrokeDone}
+                  charToken={`${level.id}-${charIdx}`}
+                  disabled={phase !== 'follow' && phase !== 'test'}
+                  hideGuides={phase === 'test'}
+                  hintFlash={hintFlash}
+                  errorHints={ERROR_HINT}
+                />
+                {phase === 'intro' && (
+                  <View style={styles.veil} pointerEvents="none">
+                    <Text style={styles.veilText}>睇住上面先，跟住就到你寫</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
         </View>
       </View>
 
@@ -366,7 +470,13 @@ export default function LessonScreen() {
             {levelIndex + 1 < LEVELS.length && (
               <TouchableOpacity
                 style={styles.primaryBtn}
-                onPress={() => router.replace(`/lesson/${LEVELS[levelIndex + 1].id}`)}
+                onPress={() =>
+                  router.replace(
+                    examMode
+                      ? `/lesson/${LEVELS[levelIndex + 1].id}?mode=exam`
+                      : `/lesson/${LEVELS[levelIndex + 1].id}`,
+                  )
+                }
               >
                 <Text style={styles.primaryBtnText}>下一關：{LEVELS[levelIndex + 1].title}</Text>
               </TouchableOpacity>
@@ -388,12 +498,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.paper },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
   errorText: { fontSize: 16, color: Colors.inkLight },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    gap: 8,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 8 },
   backBtn: { padding: 4 },
   headerTitle: { flex: 1, fontSize: 19, fontWeight: '700', color: Colors.ink },
   headerCount: { fontSize: 15, color: Colors.inkLight, fontWeight: '600' },
@@ -412,12 +517,7 @@ const styles = StyleSheet.create({
   modeToggleText: { fontSize: 12, color: Colors.inkLight, fontWeight: '600' },
   modeToggleTextActive: { color: '#FFFDF7' },
   charStripWrap: { marginTop: 6 },
-  charStrip: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-  },
+  charStrip: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 4 },
   charChip: {
     width: 38,
     height: 38,
@@ -426,42 +526,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  charChipCurrent: {
-    backgroundColor: Colors.vermillion,
-  },
-  charChipDone: {
-    backgroundColor: Colors.card,
-    borderWidth: 1.5,
-    borderColor: Colors.jade,
-  },
+  charChipCurrent: { backgroundColor: Colors.vermillion },
+  charChipDone: { backgroundColor: Colors.card, borderWidth: 1.5, borderColor: Colors.jade },
   charChipText: { fontSize: 19, color: Colors.inkLight },
   charChipTextCurrent: { color: '#FFFDF7', fontWeight: '700' },
   charChipTextDone: { color: Colors.jade, fontWeight: '700' },
-  body: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  bodyRow: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    width: '100%',
-  },
-  bodyRowLandscape: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    gap: 28,
-  },
+  body: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
+  bodyRow: { flexDirection: 'column', alignItems: 'center', width: '100%' },
+  bodyRowLandscape: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 28 },
   leftCol: { alignItems: 'center' },
-  starsRow: { flexDirection: 'row', gap: 6, marginTop: 6 },
-  poemLine: {
-    fontSize: 16,
-    color: Colors.inkLight,
-    letterSpacing: 3,
+  readingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 2,
     marginBottom: 2,
   },
+  readingChar: { fontSize: 20, fontWeight: '700', color: Colors.ink },
+  readingJp: { fontSize: 13, color: Colors.gold, fontWeight: '600' },
+  poemLine: { fontSize: 16, color: Colors.inkLight, letterSpacing: 3, marginBottom: 2 },
   poemCharActive: { color: Colors.vermillion, fontWeight: '700' },
   stageLabelRow: { alignItems: 'center', marginBottom: 2, gap: 1 },
   strokeLabel: { fontSize: 14, color: Colors.inkLight },
@@ -476,7 +559,26 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 3,
   },
-  btnRow: { flexDirection: 'row', gap: 12, marginTop: 4, marginBottom: 2 },
+  btnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 2,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  iconBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1.5,
+    borderColor: Colors.inkFaint,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  iconBtnText: { fontSize: 13, color: Colors.inkLight, fontWeight: '600' },
   primaryBtn: {
     backgroundColor: Colors.vermillion,
     borderRadius: 14,
