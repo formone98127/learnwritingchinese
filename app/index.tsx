@@ -260,17 +260,17 @@ export default function HomeScreen() {
       </View>
 
       <Text style={styles.sectionTitle}>基本筆畫</Text>
-      {/* group basics into stages for a cleaner home */}
+      {/* basics are stroke-type progressive; show with stage subtitles */}
       {(() => {
-        const stage1 = basics.filter((l) => ['l1', 'l2', 'l3', 'l4', 'l5'].includes(l.id));
-        const stage2 = basics.filter((l) => ['b6', 'b7', 'b8', 'b9', 'b10'].includes(l.id));
-        const stage3 = basics.filter((l) => ['b11', 'b12', 'b13', 'b14', 'b15'].includes(l.id));
+        const stageA = basics.slice(0, 6); // 橫豎撇捺點提
+        const stageB = basics.slice(6, 14); // 折鉤複合
+        const stageC = basics.slice(14); // 結構
         return (
           <>
             {[
-              { title: '入門・基本筆畫', levels: stage1 },
-              { title: '進階・認識世界', levels: stage2 },
-              { title: '高階・生活應用', levels: stage3 },
+              { title: '基本筆畫', levels: stageA },
+              { title: '複合筆畫', levels: stageB },
+              { title: '間架結構', levels: stageC },
             ].map(
               (group) =>
                 group.levels.length > 0 && (
