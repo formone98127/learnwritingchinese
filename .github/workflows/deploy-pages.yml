@@ -25,9 +25,17 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: actions/configure-pages@v5
+
       - run: npm ci
 
-      - run: npx expo export --platform web
+      - name: Export static web build
+        run: npx expo export --platform web
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+          EXPO_NO_TELEMETRY: 1
+
+      - run: touch dist/.nojekyll
 
       - uses: actions/upload-pages-artifact@v3
         with:
