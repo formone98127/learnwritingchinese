@@ -14,6 +14,7 @@ import { DemoPlayer } from '@/components/DemoPlayer';
 import { StrokeFormula } from '@/components/StrokeFormula';
 import { TracePad } from '@/components/TracePad';
 import { Colors } from '@/constants/colors';
+import { clampLayoutSize, MIN_DEMO_SIZE, MIN_TRACE_SIZE } from '@/constants/layout';
 import { STROKE_DATA } from '@/data/characters';
 import { JYUTPING } from '@/data/jyutping';
 import { STROKE_NAME_OVERRIDES } from '@/data/strokeNames';
@@ -55,12 +56,12 @@ export default function CharScreen() {
   let demoSize: number;
   let traceSize: number;
   if (landscape) {
-    demoSize = Math.min(height - chromeV - 150, width * 0.3); // reading row + 口訣 + button
-    traceSize = Math.min(height - chromeV - 50, width * 0.4);
+    demoSize = clampLayoutSize(Math.min(height - chromeV - 150, width * 0.3), MIN_DEMO_SIZE);
+    traceSize = clampLayoutSize(Math.min(height - chromeV - 50, width * 0.4), MIN_TRACE_SIZE);
   } else {
-    const avail = height - chromeV - 210; // reading row + 口訣 (up to 2 rows) + button + label
-    demoSize = Math.min(width * 0.42, avail * 0.38);
-    traceSize = Math.min(width * 0.86, avail * 0.62);
+    const avail = height - chromeV - 210;
+    demoSize = clampLayoutSize(Math.min(width * 0.42, avail * 0.38), MIN_DEMO_SIZE);
+    traceSize = clampLayoutSize(Math.min(width * 0.86, avail * 0.62), MIN_TRACE_SIZE);
   }
 
   if (!char || strokes.length === 0) {

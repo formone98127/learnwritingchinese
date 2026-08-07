@@ -17,6 +17,7 @@ import { StrokeChar } from '@/components/StrokeChar';
 import { StrokeFormula } from '@/components/StrokeFormula';
 import { TracePad, type StrokeError } from '@/components/TracePad';
 import { Colors } from '@/constants/colors';
+import { clampLayoutSize, MIN_DEMO_SIZE, MIN_TRACE_SIZE } from '@/constants/layout';
 import { STROKE_DATA } from '@/data/characters';
 import { LEVELS, levelStars, isLevelMastered } from '@/data/curriculum';
 import { JYUTPING } from '@/data/jyutping';
@@ -105,17 +106,16 @@ export default function LessonScreen() {
   let demoSize = 0;
   let traceSize: number;
   if (landscape && testMode) {
-    // landscape test: no demo column, give the pad nearly the full height
-    traceSize = Math.min(height - chromeV - 40, width * 0.6);
+    traceSize = clampLayoutSize(Math.min(height - chromeV - 40, width * 0.6), MIN_TRACE_SIZE);
   } else if (landscape) {
-    demoSize = Math.min((height - chromeV - 60) * 0.58, width * 0.3);
-    traceSize = Math.min(height - chromeV - 40, width * 0.44);
+    demoSize = clampLayoutSize(Math.min((height - chromeV - 60) * 0.58, width * 0.3), MIN_DEMO_SIZE);
+    traceSize = clampLayoutSize(Math.min(height - chromeV - 40, width * 0.44), MIN_TRACE_SIZE);
   } else if (testMode) {
-    traceSize = Math.min(width * 0.92, height - chromeV - 140);
+    traceSize = clampLayoutSize(Math.min(width * 0.92, height - chromeV - 140), MIN_TRACE_SIZE);
   } else {
     const avail = height - chromeV - 168;
-    demoSize = Math.min(width * 0.44, avail * 0.38);
-    traceSize = Math.min(width * 0.86, avail * 0.62);
+    demoSize = clampLayoutSize(Math.min(width * 0.44, avail * 0.38), MIN_DEMO_SIZE);
+    traceSize = clampLayoutSize(Math.min(width * 0.86, avail * 0.62), MIN_TRACE_SIZE);
   }
 
   useEffect(() => {
@@ -391,6 +391,7 @@ export default function LessonScreen() {
                     mode="full"
                     onStrokeStart={setDemoStroke}
                     onFinished={() => {
+                      if (timerRef.current) clearTimeout(timerRef.current);
                       timerRef.current = setTimeout(startFollow, 500);
                     }}
                   />

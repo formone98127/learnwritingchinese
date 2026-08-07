@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, type AppStateStatus, View } from 'react-native';
 import Animated, {
   Easing,
   cancelAnimation,
@@ -46,13 +46,20 @@ export function DemoPlayer({
   onFinished,
 }: Props) {
   const [idx, setIdx] = useState(0);
-  // increments each time a loop cycle restarts
   const [cycle, setCycle] = useState(0);
+  const [playNonce, setPlayNonce] = useState(0);
   const offset = useSharedValue(1);
+  const finishedRef = useRef(false);
+  const onFinishedRef = useRef(onFinished);
+  const onStrokeStartRef = useRef(onStrokeStart);
+  onFinishedRef.current = onFinished;
+  onStrokeStartRef.current = onStrokeStart;
+
   const scale = size / BOX;
+  const safeSize = Math.max(size, 1);
 
   const current = mode === 'loop' ? strokes[loopIndex] : strokes[idx];
-  const strokeWidth = Math.max(18, size * 0.085);
+  const strokeWidth = Math.max(18, safeSize * 0.085);
 
   const medianPath = useMemo(() => {
     if (!current) return '';
@@ -61,27 +68,45 @@ export function DemoPlayer({
 
   const animatedProps = useAnimatedProps(() => ({ strokeDashoffset: offset.value }));
 
+  const bumpIdx = useCallback(() => setIdx((i) => i + 1), []);
+  const bumpCycle = useCallback(() => setCycle((c) => c + 1), []);
+
   useEffect(() => {
     setIdx(0);
     setCycle(0);
+    finishedRef.current = false;
   }, [replayToken, strokes, mode, loopIndex]);
+
+  // Resume current stroke after app background or layout size change.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') setPlayNonce((n) => n + 1);
+    });
+    return () => sub.remove();
+  }, []);
 
   const activeIndex = mode === 'loop' ? loopIndex : idx;
 
   useEffect(() => {
     if (mode === 'full' && idx >= strokes.length) {
-      onFinished?.();
+      if (!finishedRef.current) {
+        finishedRef.current = true;
+        onFinishedRef.current?.();
+      }
       return;
     }
     const stroke = strokes[activeIndex];
     if (!stroke) return;
+
     const len = stroke.length * scale;
     const mult = getDemoDurationMultiplier() || 1;
-    const duration = Math.max(200, Math.round(
-      Math.min(1400, Math.max(480, (stroke.length / BOX) * 1100)) * mult,
-    ));
+    const duration = Math.max(
+      200,
+      Math.round(Math.min(1400, Math.max(480, (stroke.length / BOX) * 1100)) * mult),
+    );
     if (speak && (mode === 'full' || cycle === 0)) speakStrokeName(stroke.name);
-    onStrokeStart?.(activeIndex);
+    onStrokeStartRef.current?.(activeIndex);
+
     cancelAnimation(offset);
     offset.value = len;
     offset.value = withDelay(
@@ -89,24 +114,23 @@ export function DemoPlayer({
       withTiming(0, { duration, easing: Easing.inOut(Easing.quad) }, (finished) => {
         if (!finished) return;
         if (mode === 'loop') {
-          runOnJS(setCycle)(cycle + 1);
+          runOnJS(bumpCycle)();
         } else {
-          runOnJS(setIdx)(idx + 1);
+          runOnJS(bumpIdx)();
         }
       }),
     );
     return () => cancelAnimation(offset);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIndex, cycle, strokes, mode]);
+  }, [activeIndex, bumpCycle, bumpIdx, cycle, idx, mode, playNonce, scale, size, speak, strokes]);
 
   const filledCount = mode === 'loop' ? loopIndex : Math.min(idx, strokes.length);
   const highlight = current ? activeIndex : -1;
 
   return (
-    <View style={{ width: size, height: size }}>
-      <StrokeChar strokes={strokes} size={size} filledCount={filledCount} highlightIndex={highlight} />
+    <View style={{ width: safeSize, height: safeSize }}>
+      <StrokeChar strokes={strokes} size={safeSize} filledCount={filledCount} highlightIndex={highlight} />
       {current && (
-        <Svg width={size} height={size} style={{ position: 'absolute', top: 0, left: 0 }}>
+        <Svg width={safeSize} height={safeSize} style={{ position: 'absolute', top: 0, left: 0 }}>
           <AnimatedPath
             d={medianPath}
             stroke={Colors.vermillion}
