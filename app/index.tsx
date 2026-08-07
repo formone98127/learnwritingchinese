@@ -29,10 +29,11 @@ import {
 import { JYUTPING } from '@/data/jyutping';
 import { useProgress } from '@/lib/progress';
 
-// curriculum order first, then any extra chars in the dataset
+// curriculum order first, then any extra chars in the dataset (computed once)
+const CURRICULUM_CHARS = new Set(LEVELS.flatMap((l) => l.chars));
 const ALL_CHARS = [
-  ...new Set(LEVELS.flatMap((l) => l.chars)),
-  ...Object.keys(STROKE_DATA).filter((c) => !new Set(LEVELS.flatMap((l) => l.chars)).has(c)),
+  ...CURRICULUM_CHARS,
+  ...Object.keys(STROKE_DATA).filter((c) => !CURRICULUM_CHARS.has(c)),
 ];
 
 function searchChars(query: string): string[] {
@@ -120,13 +121,15 @@ function LevelCard({
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { completed, stars, resetAll, profile, profiles, switchProfile, addProfile, charAccuracy } =
+  const { completed, stars, resetAll, profile, profiles, switchProfile, addProfile, charAccuracy, review } =
     useProgress();
   const wide = width >= 700;
   const router = useRouter();
 
   const [query, setQuery] = useState('');
   const [profilePicker, setProfilePicker] = useState(false);
+  const [addProfileOpen, setAddProfileOpen] = useState(false);
+  const [newName, setNewName] = useState('');
   const results = useMemo(() => searchChars(query), [query]);
 
   const confirmReset = () => {
@@ -144,15 +147,27 @@ export default function HomeScreen() {
   const poems = LEVELS.filter((l) => l.kind === 'poem');
   const overall = LEVELS.reduce((acc, l) => acc + levelProgress(l, completed), 0) / LEVELS.length;
 
-  const reviewCount = Object.values(charAccuracy).filter((a) => a < 0.55).length;
+  // matches the review page's due predicate: attempted chars that are weak or stale
+  const reviewCount = useMemo(() => {
+    const now = Date.now();
+    return Object.entries(charAccuracy).filter(([char, acc]) => {
+      if (acc === undefined) return false;
+      const lastReview = (review as Record<string, number>)[char] ?? 0;
+      const daysSince = lastReview ? (now - lastReview) / 86400000 : 999;
+      return acc < 0.55 || daysSince >= 3;
+    }).length;
+  }, [charAccuracy, review]);
 
   const promptAddProfile = () => {
-    if (Platform.OS === 'web') {
-      const name = window.prompt('新檔案名稱：');
-      if (name?.trim()) addProfile(name.trim());
-      return;
-    }
-    Alert.prompt?.('新增檔案', '輸入名稱', (name) => name?.trim() && addProfile(name.trim()));
+    setNewName('');
+    setAddProfileOpen(true);
+  };
+
+  const confirmAddProfile = () => {
+    const name = newName.trim();
+    if (name) addProfile(name);
+    setAddProfileOpen(false);
+    setProfilePicker(false);
   };
 
   return (
@@ -346,7 +361,9 @@ export default function HomeScreen() {
           activeOpacity={1}
           onPress={() => setProfilePicker(false)}
         >
-          <View style={styles.pickerCard}>
+          {/* swallow taps on the card so they don't reach the backdrop */}
+          <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+            <View style={styles.pickerCard}>
             <Text style={styles.pickerTitle}>切換學習者</Text>
             {profiles.map((p) => (
               <TouchableOpacity
@@ -370,8 +387,46 @@ export default function HomeScreen() {
               <Ionicons name="add" size={18} color={Colors.vermillion} />
               <Text style={styles.pickerAddText}>新增學習者</Text>
             </TouchableOpacity>
-          </View>
+            </View>
+          </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      {/* add-profile modal (works on Android too, unlike Alert.prompt) */}
+      <Modal
+        transparent
+        visible={addProfileOpen}
+        animationType="fade"
+        onRequestClose={() => setAddProfileOpen(false)}
+      >
+        <View style={styles.pickerBackdrop}>
+          <View style={styles.pickerCard}>
+            <Text style={styles.pickerTitle}>新增學習者</Text>
+            <TextInput
+              style={styles.nameInput}
+              placeholder="輸入名稱"
+              placeholderTextColor={Colors.inkFaint}
+              value={newName}
+              onChangeText={setNewName}
+              autoFocus
+              maxLength={12}
+            />
+            <View style={styles.nameBtnRow}>
+              <TouchableOpacity
+                style={[styles.secondaryBtn, { flex: 1 }]}
+                onPress={() => setAddProfileOpen(false)}
+              >
+                <Text style={styles.secondaryBtnText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.primaryBtn, { flex: 1, marginTop: 0 }]}
+                onPress={confirmAddProfile}
+              >
+                <Text style={styles.primaryBtnText}>確定</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </ScrollView>
   );
@@ -466,6 +521,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pickerAddText: { fontSize: 15, color: Colors.vermillion, fontWeight: '600' },
+  nameInput: {
+    borderWidth: 1.5,
+    borderColor: Colors.inkFaint,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: Colors.ink,
+    marginBottom: 14,
+  },
+  nameBtnRow: { flexDirection: 'row', gap: 10 },
+  primaryBtn: {
+    backgroundColor: Colors.vermillion,
+    borderRadius: 14,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    marginTop: 6,
+    alignItems: 'center',
+  },
+  primaryBtnText: { color: '#FFFDF7', fontSize: 16, fontWeight: '700' },
+  secondaryBtn: {
+    borderWidth: 1.5,
+    borderColor: Colors.inkFaint,
+    borderRadius: 14,
+    paddingHorizontal: 22,
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  secondaryBtnText: { color: Colors.inkLight, fontSize: 15, fontWeight: '600' },
   appTitle: { fontSize: 34, fontWeight: '700', color: Colors.ink, letterSpacing: 2 },
   appSubtitle: { marginTop: 6, fontSize: 14, color: Colors.inkLight },
   overallTrack: {

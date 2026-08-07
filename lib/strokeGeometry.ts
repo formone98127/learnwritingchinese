@@ -22,6 +22,10 @@ export function resample(pts: number[][], n: number): number[][] {
   let i = 1;
   while (out.length < n - 1 && i < pts.length) {
     const seg = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    if (seg === 0) {
+      i++;
+      continue;
+    }
     if (acc + seg >= step * out.length) {
       const t = (step * out.length - acc) / seg;
       out.push([

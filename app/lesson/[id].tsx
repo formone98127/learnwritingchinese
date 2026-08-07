@@ -37,6 +37,7 @@ const ERROR_HINT: Record<StrokeError, string> = {
   sloppy: '寫歪咗，呢筆重新寫',
   'not-standard': '唔夠標準，再寫多次',
   'wrong-direction': '方向倒轉咗，跟返箭嘴寫',
+  incomplete: '未寫完呢筆，繼續',
 };
 
 export default function LessonScreen() {
@@ -45,6 +46,7 @@ export default function LessonScreen() {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const {
+    loaded,
     completed,
     stars: allStars,
     lessonState,
@@ -71,7 +73,14 @@ export default function LessonScreen() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scoresRef = useRef<number[]>([]);
   const resumedRef = useRef(false);
+  const canPersistRef = useRef(false);
   const celebrationRef = useRef<View>(null);
+  const stripRef = useRef<ScrollView>(null);
+
+  const scrollStrip = (animated = true) => {
+    // each chip is 38 wide + 8 gap + 16 paddingHorizontal on the container
+    stripRef.current?.scrollTo({ x: Math.max(0, charIdx * 46 - 60), animated });
+  };
 
   const shareAchievement = async () => {
     try {
@@ -91,11 +100,14 @@ export default function LessonScreen() {
     [char],
   );
 
-  const landscape = width > height && !testMode;
+  const landscape = width > height;
   const chromeV = insets.top + insets.bottom + 12 + 44 + 46;
   let demoSize = 0;
   let traceSize: number;
-  if (landscape) {
+  if (landscape && testMode) {
+    // landscape test: no demo column, give the pad nearly the full height
+    traceSize = Math.min(height - chromeV - 40, width * 0.6);
+  } else if (landscape) {
     demoSize = Math.min((height - chromeV - 60) * 0.58, width * 0.3);
     traceSize = Math.min(height - chromeV - 40, width * 0.44);
   } else if (testMode) {
@@ -115,25 +127,39 @@ export default function LessonScreen() {
 
   // resume mid-lesson once, when data + level are ready
   useEffect(() => {
-    if (!level || resumedRef.current) return;
+    if (!loaded || !level || resumedRef.current) return;
     resumedRef.current = true;
     const saved = lessonState[level.id];
     if (saved && saved.charIdx > 0 && saved.charIdx < level.chars.length) {
       setCharIdx(saved.charIdx);
-      setPhase(examMode ? 'test' : saved.phase === 'test' ? 'test' : 'intro');
-      setTestMode(examMode || saved.phase === 'test');
+      // never resume into a transient overlay phase (charDone/levelDone)
+      // or mid-demo (intro) — always land on a playable phase
+      const isTest = saved.phase === 'test' || examMode;
+      setPhase(isTest ? 'test' : 'intro');
+      setTestMode(isTest);
     }
-  }, [level, lessonState, examMode]);
+    // allow the persist effect to write only AFTER resume has run
+    canPersistRef.current = true;
+  }, [loaded, level, lessonState, examMode]);
 
   // persist position whenever it changes (skip the completion overlay states)
+  // IMPORTANT: skip until resume has had a chance to run, otherwise we
+  // overwrite the saved lessonState with charIdx=0 before resume reads it
   useEffect(() => {
-    if (!level) return;
+    if (!loaded || !level) return;
+    if (!canPersistRef.current) return;
     if (phase === 'levelDone') {
       setLessonState(level.id, null);
       return;
     }
     setLessonState(level.id, { charIdx, phase: testMode ? 'test' : phase });
-  }, [level, charIdx, phase, testMode, setLessonState]);
+  }, [loaded, level, charIdx, phase, testMode, setLessonState]);
+
+  // auto-scroll the char strip when the current char changes
+  useEffect(() => {
+    scrollStrip();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [charIdx]);
 
   // auto-advance shortly after a char is completed
   const advanceRef = useRef<() => void>(() => {});
@@ -158,6 +184,7 @@ export default function LessonScreen() {
 
   const goToChar = (next: number) => {
     stopSpeech();
+    if (timerRef.current) clearTimeout(timerRef.current);
     setCharIdx(next);
     setStrokeIdx(0);
     setDemoStroke(0);
@@ -285,7 +312,12 @@ export default function LessonScreen() {
       </View>
 
       <View style={styles.charStripWrap}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <ScrollView
+          ref={stripRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          onContentSizeChange={() => scrollStrip(false)}
+        >
           <View style={styles.charStrip}>
             {level.chars.map((c, i) => {
               const state = i === charIdx ? 'current' : doneChars.includes(c) ? 'done' : 'todo';

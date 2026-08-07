@@ -106,6 +106,7 @@ export function ProgressProvider({ children }: PropsWithChildren) {
 
   // bootstrap: load profiles list + active profile data
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     (async () => {
       let profiles = DEFAULT_PROFILES;
       const rawProfiles = await AsyncStorage.getItem(PROFILES_KEY);
@@ -158,17 +159,23 @@ export function ProgressProvider({ children }: PropsWithChildren) {
 
   const persist = useCallback((data: ProfileData, profile: Profile, profiles: Profile[]) => {
     setState({ data, profile, profiles, loaded: true });
+    if (typeof window === 'undefined') return;
     AsyncStorage.setItem(profileKey(profile.id), JSON.stringify(data));
     AsyncStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
     AsyncStorage.setItem('strokeapp.activeProfile', profile.id);
   }, []);
 
-  const update = useCallback(
-    (fn: (d: ProfileData) => ProfileData) => {
-      persist(fn(state.data), state.profile, state.profiles);
-    },
-    [state, persist],
-  );
+  // functional setState so chained updates (markCharComplete + recordAccuracy + ...)
+  // in the same tick compose instead of clobbering each other via a stale closure
+  const update = useCallback((fn: (d: ProfileData) => ProfileData) => {
+    setState((prev) => {
+      const data = fn(prev.data);
+      if (typeof window !== 'undefined') {
+        AsyncStorage.setItem(profileKey(prev.profile.id), JSON.stringify(data));
+      }
+      return { ...prev, data };
+    });
+  }, []);
 
   const markCharComplete = useCallback(
     (levelId: string, char: string, stars?: number) =>
@@ -210,7 +217,8 @@ export function ProgressProvider({ children }: PropsWithChildren) {
   const recordActivity = useCallback(
     (char: string) =>
       update((d) => {
-        const day = new Date().toISOString().slice(0, 10);
+        const now = new Date();
+        const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const activity = { ...d.activity, [day]: (d.activity[day] ?? 0) + 1 };
         return { ...d, activity };
       }),
@@ -245,8 +253,9 @@ export function ProgressProvider({ children }: PropsWithChildren) {
 
   const addProfile = useCallback(
     (name: string) => {
-      const id = `p${Date.now()}`;
-      const profile: Profile = { id, name, avatar: name.slice(0, 1) };
+      const id = `p${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+      const first = Array.from(name.trim())[0] ?? '我';
+      const profile: Profile = { id, name: name.trim(), avatar: first };
       const profiles = [...state.profiles, profile];
       persist(EMPTY, profile, profiles);
     },

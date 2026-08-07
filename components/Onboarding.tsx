@@ -36,6 +36,7 @@ export function Onboarding() {
   const { width } = useWindowDimensions();
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     AsyncStorage.getItem(KEY).then((v) => {
       if (!v) setVisible(true);
     });
@@ -47,7 +48,7 @@ export function Onboarding() {
 
   const finish = () => {
     setVisible(false);
-    AsyncStorage.setItem(KEY, '1');
+    if (typeof window !== 'undefined') AsyncStorage.setItem(KEY, '1');
   };
 
   return (

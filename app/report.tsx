@@ -20,19 +20,28 @@ export default function ReportScreen() {
   const { completed, stars, charAccuracy, activity, profile } = useProgress();
 
   const stats = useMemo(() => {
-    const totalChars = Object.values(completed).reduce((n, arr) => n + arr.length, 0);
-    const allStars = Object.values(stars).flatMap((m) => Object.values(m));
-    const threeStars = allStars.filter((s) => s >= 3).length;
-    const totalStars = allStars.reduce((a, b) => a + b, 0);
+    // dedupe by char — the same character appearing in multiple levels counts once
+    const charBest = new Map<string, number>();
+    for (const map of Object.values(stars)) {
+      for (const [c, s] of Object.entries(map)) {
+        charBest.set(c, Math.max(charBest.get(c) ?? 0, s));
+      }
+    }
+    const totalChars = charBest.size;
+    const threeStars = [...charBest.values()].filter((s) => s >= 3).length;
+    const totalStars = [...charBest.values()].reduce((a, b) => a + b, 0);
     const masteredLevels = LEVELS.filter((l) => isLevelMastered(l, stars)).length;
 
     // streak: consecutive days up to today with activity
+    // use LOCAL date (not UTC) so the boundary is midnight in the user's timezone
+    const localDay = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const days = new Set(Object.keys(activity));
     let streak = 0;
     const d = new Date();
     // if today has no activity yet, streak counts up to yesterday
-    if (!days.has(d.toISOString().slice(0, 10))) d.setDate(d.getDate() - 1);
-    while (days.has(d.toISOString().slice(0, 10))) {
+    if (!days.has(localDay(d))) d.setDate(d.getDate() - 1);
+    while (days.has(localDay(d))) {
       streak++;
       d.setDate(d.getDate() - 1);
     }
@@ -43,12 +52,12 @@ export default function ReportScreen() {
       .slice(0, 8)
       .map(([c, acc]) => ({ char: c, acc }));
 
-    // last 7 days activity
+    // last 7 days activity (local dates to match recordActivity)
     const week: { day: string; count: number }[] = [];
     for (let i = 6; i >= 0; i--) {
       const dd = new Date();
       dd.setDate(dd.getDate() - i);
-      const key = dd.toISOString().slice(0, 10);
+      const key = localDay(dd);
       week.push({ day: key.slice(5), count: activity[key] ?? 0 });
     }
     const maxWeek = Math.max(1, ...week.map((w) => w.count));

@@ -20,6 +20,27 @@ LANGS = {
 PRAISES_YUE = ["寫得好！", "好嘢！", "叻喎！", "做得好啊！"]
 PRAISES_CMN = ["写得好！", "好耶！", "真棒！", "做得好啊！"]
 
+ERROR_HINTS_YUE = [
+    "要由紅點嗰度起筆呀",
+    "起筆位置唔啱，再諗下先",
+    "寫歪咗，呢筆重新寫",
+    "唔夠標準，再寫多次",
+    "方向倒轉咗，跟返箭嘴寫",
+    "太短啦，寫長少少",
+    "未寫完呢筆，繼續",
+    "太快啦，慢慢嚟",
+]
+ERROR_HINTS_CMN = [
+    "要从红点那里起笔哦",
+    "起笔位置不对，再想想",
+    "写歪了，这一笔重新写",
+    "不够标准，再写一次",
+    "方向反了，跟着箭头写",
+    "太短啦，写长一点",
+    "还没写完这一笔，继续",
+    "太快啦，慢慢来",
+]
+
 EXTRA_NAMES = [
     "橫", "豎", "撇", "捺", "提", "點", "折", "鉤",
     "橫折", "豎折", "撇折", "橫撇", "橫鉤", "豎鉤", "彎鉤", "臥鉤", "斜鉤",
@@ -49,9 +70,11 @@ def collect_texts(lang: str) -> list[str]:
         chars = [c for c in chars]  # chars stay traditional (app is traditional)
         names = {NAME_MAP_CMN.get(n, n) for n in names}
         praises = PRAISES_CMN
+        extras = ERROR_HINTS_CMN
     else:
         praises = PRAISES_YUE
-    return chars + sorted(names) + praises
+        extras = ERROR_HINTS_YUE
+    return chars + sorted(names) + praises + extras
 
 
 async def gen(text: str, path: Path, voice: str, rate: str, sem: asyncio.Semaphore) -> bool:

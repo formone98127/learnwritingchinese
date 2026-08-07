@@ -28,14 +28,16 @@ export default function ReviewScreen() {
   // weak chars = low accuracy, or mastered long ago (due for re-review)
   const weakChars = useMemo(() => {
     const now = Date.now();
-    const entries = Object.entries(STROKE_DATA).map(([char]) => {
-      const acc = charAccuracy[char];
-      const lastReview = review[char] ?? 0;
-      const daysSince = lastReview ? (now - lastReview) / 86400000 : 999;
-      // due if weak, or not reviewed in 3+ days
-      const due = (acc !== undefined && acc < WEAK_THRESHOLD) || daysSince >= 3;
-      return { char, acc: acc ?? 0, due, daysSince };
-    });
+    const entries = Object.entries(STROKE_DATA)
+      .filter(([char]) => charAccuracy[char] !== undefined) // only chars the user has actually attempted
+      .map(([char]) => {
+        const acc = charAccuracy[char];
+        const lastReview = review[char] ?? 0;
+        const daysSince = lastReview ? (now - lastReview) / 86400000 : 999;
+        // due if weak, or not reviewed in 3+ days
+        const due = (acc !== undefined && acc < WEAK_THRESHOLD) || daysSince >= 3;
+        return { char, acc: acc ?? 0, due, daysSince };
+      });
     return entries
       .filter((e) => e.due)
       .sort((a, b) => a.acc - b.acc || b.daysSince - a.daysSince)

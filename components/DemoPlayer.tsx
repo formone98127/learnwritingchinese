@@ -82,6 +82,7 @@ export function DemoPlayer({
     ));
     if (speak && (mode === 'full' || cycle === 0)) speakStrokeName(stroke.name);
     onStrokeStart?.(activeIndex);
+    cancelAnimation(offset);
     offset.value = len;
     offset.value = withDelay(
       mode === 'loop' && cycle > 0 ? 450 : 0,

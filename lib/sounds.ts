@@ -16,7 +16,9 @@ function player(name: SoundName): AudioPlayer | undefined {
   try {
     if (!audioModeReady) {
       audioModeReady = true;
-      setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: false });
+      setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: false }).catch(
+        () => {},
+      );
     }
     let p = players.get(name);
     if (!p) {

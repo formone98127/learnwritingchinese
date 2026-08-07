@@ -4,6 +4,7 @@ import { PanResponder, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { Colors } from '@/constants/colors';
+import { speakError } from '@/lib/speech';
 import { playSound } from '@/lib/sounds';
 import { SAMPLE_COUNT, pointsToPath, traceSamples } from '@/lib/strokeGeometry';
 import type { Point, StrokeInfo } from '@/lib/types';
@@ -16,7 +17,8 @@ export type StrokeError =
   | 'wrong-start-test'
   | 'sloppy'
   | 'not-standard'
-  | 'wrong-direction';
+  | 'wrong-direction'
+  | 'incomplete';
 
 type Props = {
   strokes: StrokeInfo[];
@@ -45,6 +47,7 @@ const DEFAULT_ERROR_HINT: Record<StrokeError, string> = {
   sloppy: '寫歪咗，呢筆重新寫',
   'not-standard': '唔夠標準，再寫多次',
   'wrong-direction': '方向倒轉咗，跟返箭嘴寫',
+  incomplete: '未寫完呢筆，繼續',
 };
 
 export function TracePad({
@@ -68,16 +71,22 @@ export function TracePad({
     () => traceSamples(strokes[strokeIndex].median, size),
     [strokes, strokeIndex, size],
   );
+  // degenerate median (empty or single point) can never be traced — auto-complete it
+  const degenerate = samples.length < 2;
 
   const samplesRef = useRef(samples);
   const radiusRef = useRef(size * 0.12);
   const onStrokeDoneRef = useRef(onStrokeDone);
   const disabledRef = useRef(disabled);
+  const hideGuidesRef = useRef(hideGuides);
+  const hintsRef = useRef(hints);
   const dotLikeRef = useRef(false);
   samplesRef.current = samples;
   radiusRef.current = size * 0.12;
   onStrokeDoneRef.current = onStrokeDone;
   disabledRef.current = disabled;
+  hideGuidesRef.current = hideGuides;
+  hintsRef.current = hints;
   {
     const span =
       samples.length > 1
@@ -111,7 +120,13 @@ export function TracePad({
     restartsRef.current = 0;
     setTrace([]);
     setHint(hintDefault);
-  }, [strokeIndex, charToken, hintDefault]);
+    // a stroke with no usable median can't be traced — skip it automatically
+    if (degenerate && !doneRef.current) {
+      doneRef.current = true;
+      onStrokeDoneRef.current(0.5);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strokeIndex, charToken, hintDefault, degenerate]);
 
   // flash the next-stroke ghost briefly when hintFlash bumps
   useEffect(() => {
@@ -155,11 +170,13 @@ export function TracePad({
   }
 
   function tryComplete() {
+    const total = samplesRef.current.length;
     const covered = coveredRef.current.size;
     if (
       doneRef.current ||
-      covered < Math.ceil(SAMPLE_COUNT * 0.8) ||
-      furthestRef.current < SAMPLE_COUNT - 3
+      total < 2 ||
+      covered < Math.ceil(total * 0.8) ||
+      furthestRef.current < total - 3
     ) {
       return;
     }
@@ -168,7 +185,7 @@ export function TracePad({
       ? 1
       : 1 - Math.min(1, avgDist / (radiusRef.current * 0.55));
     if (accuracy < 0.1) {
-      wipeAttempt(hints['not-standard']);
+      wipeAttempt(hintsRef.current['not-standard'], 'not-standard');
       return;
     }
     doneRef.current = true;
@@ -181,7 +198,7 @@ export function TracePad({
     onStrokeDoneRef.current(score);
   }
 
-  function wipeAttempt(hintText: string) {
+  function wipeAttempt(hintText: string, errorKey?: StrokeError) {
     startedRef.current = false;
     restartsRef.current += 1;
     coveredRef.current = new Set();
@@ -191,6 +208,7 @@ export function TracePad({
     setHint(hintText);
     playSound('wrong');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (errorKey) speakError(errorKey);
   }
 
   const pan = useRef(
@@ -200,6 +218,7 @@ export function TracePad({
       onPanResponderGrant: (e) => {
         if (doneRef.current || disabledRef.current) return;
         const s = samplesRef.current;
+        if (s.length < 2) return;
         const r = radiusRef.current;
         const p = { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY };
         const d0 = Math.hypot(s[0].x - p.x, s[0].y - p.y);
@@ -217,19 +236,20 @@ export function TracePad({
           const hintKey: StrokeError =
             !dotLikeRef.current && dEnd < r * 1.5
               ? 'wrong-direction'
-              : hideGuides
+              : hideGuidesRef.current
                 ? 'wrong-start-test'
                 : 'wrong-start';
-          setHint(hints[hintKey]);
+          setHint(hintsRef.current[hintKey]);
           playSound('wrong');
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          speakError(hintKey);
         }
       },
       onPanResponderMove: (e) => {
         if (doneRef.current || !startedRef.current) return;
         const p = { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY };
         if (rawDistToStroke(p) > radiusRef.current * 2.0) {
-          wipeAttempt(hints.sloppy);
+          wipeAttempt(hintsRef.current.sloppy, 'sloppy');
           return;
         }
         traceRef.current = [...traceRef.current, p];
@@ -244,12 +264,14 @@ export function TracePad({
           startedRef.current = false;
           return;
         }
-        if (startedRef.current && furthestRef.current < SAMPLE_COUNT - 3) {
+        if (startedRef.current && furthestRef.current < samplesRef.current.length - 3) {
           restartsRef.current += 1;
           coveredRef.current = new Set();
           furthestRef.current = -1;
           traceRef.current = [];
           setTrace([]);
+          setHint(hintsRef.current.incomplete);
+          speakError('incomplete');
         }
         startedRef.current = false;
       },
@@ -271,7 +293,7 @@ export function TracePad({
           highlightIndex={hideGuides ? -1 : strokeIndex}
         />
         <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-          {showGhost && (
+          {showGhost && samples.length > 0 && (
             <>
               <Path
                 d={guidePath}
