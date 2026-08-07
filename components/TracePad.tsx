@@ -13,6 +13,7 @@ import type { Point, StrokeInfo } from '@/lib/types';
 
 import { MiGrid } from './MiGrid';
 import { StrokeChar } from './StrokeChar';
+import { WebPadSurface } from './WebPadSurface';
 
 export type StrokeError =
   | 'wrong-start'
@@ -44,19 +45,6 @@ const DEFAULT_ERROR_HINT: Record<StrokeError, string> = {
   'wrong-direction': '方向倒轉咗，跟返箭嘴寫',
   incomplete: '未寫完呢筆，繼續',
 };
-
-function resolvePadElement(ref: React.RefObject<View | null>, id?: string): HTMLElement | null {
-  if (Platform.OS === 'web' && id && typeof document !== 'undefined') {
-    const byId = document.getElementById(id);
-    if (byId) return byId;
-  }
-  let node = ref.current as unknown as HTMLElement | null;
-  for (let depth = 0; node && depth < 4; depth++) {
-    if (typeof node.getBoundingClientRect === 'function') return node;
-    node = (node as unknown as { firstElementChild?: HTMLElement }).firstElementChild ?? node.parentElement;
-  }
-  return null;
-}
 
 export function TracePad({
   strokes,
@@ -114,7 +102,6 @@ export function TracePad({
   const distCountRef = useRef(0);
   const wrongStartsRef = useRef(0);
   const restartsRef = useRef(0);
-  const padRef = useRef<View>(null);
   const padDomId = `trace-pad-${charToken}-${strokeIndex}`;
 
   useEffect(() => {
@@ -294,75 +281,14 @@ export function TracePad({
     [onGrantPoint, onMovePoint, onReleasePoint],
   );
 
-  // Web (especially mobile Safari): RN touch handlers are passive / wrong coords — bind pointer events on DOM.
-  useEffect(() => {
-    if (Platform.OS !== 'web') return;
-
-    let el: HTMLElement | null = null;
-    let activePointer: number | null = null;
-
-    const toLocal = (clientX: number, clientY: number): Point => {
-      const rect = el!.getBoundingClientRect();
-      return { x: clientX - rect.left, y: clientY - rect.top };
-    };
-
-    const onPointerDown = (ev: PointerEvent) => {
-      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
-      activePointer = ev.pointerId;
-      ev.preventDefault();
-      el?.setPointerCapture(ev.pointerId);
-      onGrantPoint(toLocal(ev.clientX, ev.clientY));
-    };
-    const onPointerMove = (ev: PointerEvent) => {
-      if (activePointer !== ev.pointerId) return;
-      ev.preventDefault();
-      onMovePoint(toLocal(ev.clientX, ev.clientY));
-    };
-    const endPointer = (ev: PointerEvent) => {
-      if (activePointer !== ev.pointerId) return;
-      activePointer = null;
-      onReleasePoint();
-    };
-
-    const attach = () => {
-      el = resolvePadElement(padRef, padDomId);
-      if (!el) return false;
-      el.style.touchAction = 'none';
-      el.addEventListener('pointerdown', onPointerDown, { passive: false });
-      el.addEventListener('pointermove', onPointerMove, { passive: false });
-      el.addEventListener('pointerup', endPointer, { passive: false });
-      el.addEventListener('pointercancel', endPointer, { passive: false });
-      return true;
-    };
-
-    let frame = 0;
-    let attempts = 0;
-    const tryAttach = () => {
-      if (attach() || attempts++ > 90) return;
-      frame = requestAnimationFrame(tryAttach);
-    };
-    tryAttach();
-
-    return () => {
-      cancelAnimationFrame(frame);
-      if (!el) return;
-      el.removeEventListener('pointerdown', onPointerDown);
-      el.removeEventListener('pointermove', onPointerMove);
-      el.removeEventListener('pointerup', endPointer);
-      el.removeEventListener('pointercancel', endPointer);
-    };
-  }, [onGrantPoint, onMovePoint, onReleasePoint, padDomId, size]);
-
   const guidePath = useMemo(() => pointsToPath(samples), [samples]);
   const tracePath = trace.length > 1 ? pointsToPath(trace) : '';
   const showGhost = !hideGuides || flashGhost;
 
   const padView = (
     <View
-      ref={padRef}
-      nativeID={padDomId}
       collapsable={false}
-      style={[{ width: size, height: size }, Platform.OS === 'web' && webPad]}
+      style={[{ width: size, height: size, position: 'relative' }, Platform.OS === 'web' && webPad]}
     >
       <MiGrid size={size} />
       <StrokeChar
@@ -402,16 +328,21 @@ export function TracePad({
           />
         )}
       </Svg>
+      {Platform.OS === 'web' && (
+        <WebPadSurface
+          id={padDomId}
+          size={size}
+          onGrant={onGrantPoint}
+          onMove={onMovePoint}
+          onRelease={onReleasePoint}
+        />
+      )}
     </View>
   );
 
   return (
     <View>
-      {Platform.OS === 'web' ? (
-        padView
-      ) : (
-        <GestureDetector gesture={panGesture}>{padView}</GestureDetector>
-      )}
+      {Platform.OS === 'web' ? padView : <GestureDetector gesture={panGesture}>{padView}</GestureDetector>}
       <Text style={styles.hint}>{hint}</Text>
     </View>
   );
@@ -430,9 +361,7 @@ const styles = StyleSheet.create({
 const webPad = Platform.OS === 'web'
   ? ({
       touchAction: 'none',
-      cursor: 'crosshair',
       userSelect: 'none',
       WebkitUserSelect: 'none',
-      WebkitTouchCallout: 'none',
     } as const)
   : null;

@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -279,6 +280,12 @@ export default function LessonScreen() {
 
   const jyutping = JYUTPING[char];
 
+  const BodyWrap = Platform.OS === 'web' ? ScrollView : View;
+  const bodyWrapProps =
+    Platform.OS === 'web'
+      ? { contentContainerStyle: styles.bodyScroll, showsVerticalScrollIndicator: false }
+      : { style: styles.body };
+
   return (
     <View
       style={[styles.screen, { paddingTop: insets.top + 4, paddingBottom: insets.bottom + 8 }]}
@@ -347,7 +354,7 @@ export default function LessonScreen() {
         </ScrollView>
       </View>
 
-      <View style={styles.body}>
+      <BodyWrap {...bodyWrapProps}>
         {poemLine && (
           <Text style={styles.poemLine}>
             {poemLine.split('').map((c, ci) => (
@@ -466,21 +473,24 @@ export default function LessonScreen() {
                   strokeIndex={strokeIdx}
                   onStrokeDone={handleStrokeDone}
                   charToken={`${level.id}-${charIdx}`}
-                  disabled={phase !== 'follow' && phase !== 'test'}
+                  disabled={Platform.OS !== 'web' && phase !== 'follow' && phase !== 'test'}
                   hideGuides={phase === 'test'}
                   hintFlash={hintFlash}
                   errorHints={ERROR_HINT}
                 />
-                {phase === 'intro' && (
+                {phase === 'intro' && Platform.OS !== 'web' && (
                   <View style={styles.veil} pointerEvents="none">
                     <Text style={styles.veilText}>睇住上面先，跟住就到你寫</Text>
                   </View>
+                )}
+                {phase === 'intro' && Platform.OS === 'web' && (
+                  <Text style={styles.webIntroHint}>睇住上面先，跟住就到你寫</Text>
                 )}
               </View>
             </View>
           )}
         </View>
-      </View>
+      </BodyWrap>
 
       {phase === 'levelDone' && (
         <View style={styles.overlay}>
@@ -565,6 +575,7 @@ const styles = StyleSheet.create({
   charChipTextCurrent: { color: '#FFFDF7', fontWeight: '700' },
   charChipTextDone: { color: Colors.jade, fontWeight: '700' },
   body: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
+  bodyScroll: { alignItems: 'center', paddingHorizontal: 20, paddingBottom: 24 },
   bodyRow: { flexDirection: 'column', alignItems: 'center', width: '100%' },
   bodyRowLandscape: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 28 },
   leftCol: { alignItems: 'center' },
@@ -638,6 +649,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   veilText: { color: Colors.inkLight, fontSize: 15, fontWeight: '600' },
+  webIntroHint: {
+    marginTop: 6,
+    textAlign: 'center',
+    color: Colors.inkLight,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(38,34,28,0.45)',
