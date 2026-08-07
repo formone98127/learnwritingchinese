@@ -1,6 +1,13 @@
 import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
+import {
+  type GestureResponderEvent,
+  PanResponder,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { Colors } from '@/constants/colors';
@@ -211,72 +218,117 @@ export function TracePad({
     if (errorKey) speakError(errorKey);
   }
 
+  const padRef = useRef<View>(null);
+
+  /** RN-web reports locationX/Y relative to hit child (SVG), not the pad — breaks mobile tracing. */
+  function eventToLocal(e: GestureResponderEvent): Point {
+    if (Platform.OS !== 'web') {
+      return { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY };
+    }
+    const ne = e.nativeEvent as GestureResponderEvent['nativeEvent'] & {
+      pageX?: number;
+      pageY?: number;
+      touches?: { pageX: number; pageY: number }[];
+      changedTouches?: { pageX: number; pageY: number }[];
+    };
+    const touch = ne.touches?.[0] ?? ne.changedTouches?.[0] ?? ne;
+    const pageX = touch.pageX ?? ne.pageX ?? 0;
+    const pageY = touch.pageY ?? ne.pageY ?? 0;
+    const node = padRef.current as unknown as HTMLElement | null;
+    const rect = node?.getBoundingClientRect?.();
+    if (rect) return { x: pageX - rect.left, y: pageY - rect.top };
+    return { x: ne.locationX, y: ne.locationY };
+  }
+
+  function onGrant(e: GestureResponderEvent) {
+    if (doneRef.current || disabledRef.current) return;
+    const s = samplesRef.current;
+    if (s.length < 2) return;
+    const r = radiusRef.current;
+    const p = eventToLocal(e);
+    const d0 = Math.hypot(s[0].x - p.x, s[0].y - p.y);
+    const dEnd = Math.hypot(s[s.length - 1].x - p.x, s[s.length - 1].y - p.y);
+    if (d0 < r * 2.2 && (dotLikeRef.current || dEnd > r * 1.5)) {
+      startedRef.current = true;
+      traceRef.current = [p];
+      setTrace([p]);
+      collectPoint(p);
+      tryComplete();
+    } else {
+      startedRef.current = false;
+      wrongStartsRef.current += 1;
+      const hintKey: StrokeError =
+        !dotLikeRef.current && dEnd < r * 1.5
+          ? 'wrong-direction'
+          : hideGuidesRef.current
+            ? 'wrong-start-test'
+            : 'wrong-start';
+      setHint(hintsRef.current[hintKey]);
+      playSound('wrong');
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      speakError(hintKey);
+    }
+  }
+
+  function onMove(e: GestureResponderEvent) {
+    if (doneRef.current || !startedRef.current) return;
+    const p = eventToLocal(e);
+    if (rawDistToStroke(p) > radiusRef.current * 2.0) {
+      wipeAttempt(hintsRef.current.sloppy, 'sloppy');
+      return;
+    }
+    traceRef.current = [...traceRef.current, p];
+    setTrace(traceRef.current);
+    collectPoint(p);
+    tryComplete();
+  }
+
+  function onRelease() {
+    if (doneRef.current) return;
+    if (startedRef.current) tryComplete();
+    if (doneRef.current) {
+      startedRef.current = false;
+      return;
+    }
+    if (startedRef.current && furthestRef.current < samplesRef.current.length - 3) {
+      restartsRef.current += 1;
+      coveredRef.current = new Set();
+      furthestRef.current = -1;
+      traceRef.current = [];
+      setTrace([]);
+      setHint(hintsRef.current.incomplete);
+      speakError('incomplete');
+    }
+    startedRef.current = false;
+  }
+
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => {
-        if (doneRef.current || disabledRef.current) return;
-        const s = samplesRef.current;
-        if (s.length < 2) return;
-        const r = radiusRef.current;
-        const p = { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY };
-        const d0 = Math.hypot(s[0].x - p.x, s[0].y - p.y);
-        const dEnd = Math.hypot(s[s.length - 1].x - p.x, s[s.length - 1].y - p.y);
-        if (d0 < r * 2.2 && (dotLikeRef.current || dEnd > r * 1.5)) {
-          startedRef.current = true;
-          traceRef.current = [p];
-          setTrace([p]);
-          collectPoint(p);
-          tryComplete();
-        } else {
-          startedRef.current = false;
-          wrongStartsRef.current += 1;
-          // distinguish: started at the END (wrong direction) vs somewhere random
-          const hintKey: StrokeError =
-            !dotLikeRef.current && dEnd < r * 1.5
-              ? 'wrong-direction'
-              : hideGuidesRef.current
-                ? 'wrong-start-test'
-                : 'wrong-start';
-          setHint(hintsRef.current[hintKey]);
-          playSound('wrong');
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          speakError(hintKey);
-        }
-      },
-      onPanResponderMove: (e) => {
-        if (doneRef.current || !startedRef.current) return;
-        const p = { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY };
-        if (rawDistToStroke(p) > radiusRef.current * 2.0) {
-          wipeAttempt(hintsRef.current.sloppy, 'sloppy');
-          return;
-        }
-        traceRef.current = [...traceRef.current, p];
-        setTrace(traceRef.current);
-        collectPoint(p);
-        tryComplete();
-      },
-      onPanResponderRelease: () => {
-        if (doneRef.current) return;
-        if (startedRef.current) tryComplete();
-        if (doneRef.current) {
-          startedRef.current = false;
-          return;
-        }
-        if (startedRef.current && furthestRef.current < samplesRef.current.length - 3) {
-          restartsRef.current += 1;
-          coveredRef.current = new Set();
-          furthestRef.current = -1;
-          traceRef.current = [];
-          setTrace([]);
-          setHint(hintsRef.current.incomplete);
-          speakError('incomplete');
-        }
-        startedRef.current = false;
-      },
+      onPanResponderGrant: onGrant,
+      onPanResponderMove: onMove,
+      onPanResponderRelease: onRelease,
+      onPanResponderTerminate: onRelease,
     }),
   ).current;
+
+  // Mobile Safari: direct touch handlers are more reliable than PanResponder on web.
+  const webTouchHandlers =
+    Platform.OS === 'web'
+      ? {
+          onTouchStart: (e: GestureResponderEvent) => {
+            e.preventDefault?.();
+            onGrant(e);
+          },
+          onTouchMove: (e: GestureResponderEvent) => {
+            e.preventDefault?.();
+            onMove(e);
+          },
+          onTouchEnd: () => onRelease(),
+          onTouchCancel: () => onRelease(),
+        }
+      : {};
 
   const guidePath = useMemo(() => pointsToPath(samples), [samples]);
   const tracePath = trace.length > 1 ? pointsToPath(trace) : '';
@@ -285,8 +337,10 @@ export function TracePad({
   return (
     <View>
       <View
+        ref={padRef}
         style={[{ width: size, height: size }, Platform.OS === 'web' && webPad]}
-        {...pan.panHandlers}
+        pointerEvents={Platform.OS === 'web' ? 'box-only' : 'auto'}
+        {...(Platform.OS === 'web' ? webTouchHandlers : pan.panHandlers)}
       >
         <MiGrid size={size} />
         <StrokeChar
@@ -342,4 +396,12 @@ const styles = StyleSheet.create({
   },
 });
 
-const webPad = Platform.OS === 'web' ? ({ touchAction: 'none', cursor: 'crosshair' } as const) : null;
+const webPad = Platform.OS === 'web'
+  ? ({
+      touchAction: 'none',
+      cursor: 'crosshair',
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      WebkitTouchCallout: 'none',
+    } as const)
+  : null;
