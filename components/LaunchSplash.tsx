@@ -9,6 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Colors } from '@/constants/colors';
+import { t } from '@/lib/i18n';
 
 type Props = {
   onFinish: () => void;
@@ -61,11 +62,11 @@ export function LaunchSplash({ onFinish }: Props) {
     <Pressable style={styles.overlay} onPress={safeFinish} accessibilityRole="button">
       <Animated.View style={[StyleSheet.absoluteFillObject, overlayStyle]} pointerEvents="none">
         <View style={styles.center}>
-          <Animated.Text style={[styles.title, titleStyle]}>筆順學堂</Animated.Text>
+          <Animated.Text style={[styles.title, titleStyle]}>{t('siteTitle')}</Animated.Text>
           <Animated.View style={[styles.rule, ruleStyle]} />
           <Animated.Text style={[styles.credit, creditStyle]}>by Hagan Creactive</Animated.Text>
           {Platform.OS === 'web' && (
-            <Animated.Text style={[styles.tapHint, creditStyle]}>點擊繼續</Animated.Text>
+            <Animated.Text style={[styles.tapHint, creditStyle]}>{t('tapContinue')}</Animated.Text>
           )}
         </View>
       </Animated.View>

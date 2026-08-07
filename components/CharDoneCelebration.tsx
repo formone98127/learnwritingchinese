@@ -12,6 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Colors } from '@/constants/colors';
+import { t } from '@/lib/i18n';
 
 type Props = {
   stars: number;
@@ -77,7 +78,7 @@ export function CharDoneCelebration({ stars, praise, char, onShare }: Props) {
         {onShare && Platform.OS !== 'web' && (
           <TouchableOpacity style={styles.shareBtn} onPress={onShare} hitSlop={8}>
             <Ionicons name="share-social" size={14} color="#FFFDF7" />
-            <Text style={styles.shareBtnText}>分享成績</Text>
+            <Text style={styles.shareBtnText}>{t('shareScore')}</Text>
           </TouchableOpacity>
         )}
       </Animated.View>

@@ -7,6 +7,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 
 import { Colors } from '@/constants/colors';
 import { speakError } from '@/lib/speech';
+import { getErrorHints } from '@/lib/i18n';
 import { playSound } from '@/lib/sounds';
 import { pointsToPath, traceSamples } from '@/lib/strokeGeometry';
 import type { Point, StrokeInfo } from '@/lib/types';
@@ -37,14 +38,7 @@ type Props = {
 
 const HINT_DEFAULT = '';
 const HINT_TEST = '';
-const DEFAULT_ERROR_HINT: Record<StrokeError, string> = {
-  'wrong-start': '要由紅點嗰度起筆呀',
-  'wrong-start-test': '起筆位置唔啱，再諗下先',
-  sloppy: '寫歪咗，呢筆重新寫',
-  'not-standard': '唔夠標準，再寫多次',
-  'wrong-direction': '方向倒轉咗，跟返箭嘴寫',
-  incomplete: '未寫完呢筆，繼續',
-};
+const DEFAULT_ERROR_HINT = getErrorHints();
 
 export function TracePad({
   strokes,

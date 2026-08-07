@@ -16,7 +16,7 @@ import { DemoPlayer } from '@/components/DemoPlayer';
 import { CharDoneCelebration } from '@/components/CharDoneCelebration';
 import { StrokeChar } from '@/components/StrokeChar';
 import { StrokeFormula } from '@/components/StrokeFormula';
-import { TracePad, type StrokeError } from '@/components/TracePad';
+import { TracePad } from '@/components/TracePad';
 import { Colors } from '@/constants/colors';
 import { clampLayoutSize, MIN_DEMO_SIZE, MIN_TRACE_SIZE } from '@/constants/layout';
 import { STROKE_DATA } from '@/data/characters';
@@ -25,6 +25,7 @@ import { JYUTPING } from '@/data/jyutping';
 import { STROKE_NAME_OVERRIDES } from '@/data/strokeNames';
 import { STROKE_RULES } from '@/data/strokeRules';
 import { useProgress } from '@/lib/progress';
+import { getErrorHints, localizeLevel, randomPraiseUi, t } from '@/lib/i18n';
 import { playSound } from '@/lib/sounds';
 import { speakChar, speakPraise, randomPraise, stopSpeech } from '@/lib/speech';
 import { buildStrokes } from '@/lib/strokeGeometry';
@@ -33,14 +34,7 @@ import * as Sharing from 'expo-sharing';
 
 type Phase = 'intro' | 'follow' | 'test' | 'charDone' | 'levelDone';
 
-const ERROR_HINT: Record<StrokeError, string> = {
-  'wrong-start': '要由紅點嗰度起筆呀',
-  'wrong-start-test': '起筆位置唔啱，再諗下先',
-  sloppy: '寫歪咗，呢筆重新寫',
-  'not-standard': '唔夠標準，再寫多次',
-  'wrong-direction': '方向倒轉咗，跟返箭嘴寫',
-  incomplete: '未寫完呢筆，繼續',
-};
+const ERROR_HINT = getErrorHints();
 
 export default function LessonScreen() {
   const { id, mode } = useLocalSearchParams<{ id: string; mode?: string }>();
@@ -69,7 +63,7 @@ export default function LessonScreen() {
   const [demoStroke, setDemoStroke] = useState(0);
   const [strokeIdx, setStrokeIdx] = useState(0);
   const [charStars, setCharStars] = useState(0);
-  const [praise, setPraise] = useState('寫得好！');
+  const [praise, setPraise] = useState(() => randomPraiseUi());
   const [hintFlash, setHintFlash] = useState(0); // bump to flash next-stroke ghost
   const [hintUsed, setHintUsed] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -173,9 +167,9 @@ export default function LessonScreen() {
   if (!level || !char || strokes.length === 0) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
-        <Text style={styles.errorText}>搵唔到呢一關</Text>
+        <Text style={styles.errorText}>{t('levelNotFound')}</Text>
         <TouchableOpacity onPress={() => router.back()} style={styles.primaryBtn}>
-          <Text style={styles.primaryBtnText}>返回</Text>
+          <Text style={styles.primaryBtnText}>{t('back')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -232,11 +226,11 @@ export default function LessonScreen() {
     let stars = avg >= 0.75 ? 3 : avg >= 0.5 ? 2 : 1;
     if (hintUsed) stars = Math.min(stars, 2); // hint caps the star
     setCharStars(stars);
-    const p = randomPraise();
-    setPraise(p);
+    const pAudio = randomPraise();
+    setPraise(randomPraiseUi());
     setPhase('charDone');
     playSound('char-done');
-    speakPraise(p);
+    speakPraise(pAudio);
     markCharComplete(level.id, char, stars);
     recordAccuracy(char, avg);
     recordActivity(char);
@@ -279,6 +273,7 @@ export default function LessonScreen() {
       : undefined;
 
   const jyutping = JYUTPING[char];
+  const levelDisplay = localizeLevel(level);
 
   const BodyWrap = Platform.OS === 'web' ? ScrollView : View;
   const bodyWrapProps =
@@ -294,7 +289,7 @@ export default function LessonScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color={Colors.ink} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{level.title}</Text>
+        <Text style={styles.headerTitle}>{levelDisplay.title}</Text>
         <View style={styles.headerRight}>
           {!examMode && (
             <TouchableOpacity
@@ -308,7 +303,7 @@ export default function LessonScreen() {
                 color={testMode ? '#FFFDF7' : Colors.inkLight}
               />
               <Text style={[styles.modeToggleText, testMode && styles.modeToggleTextActive]}>
-                {testMode ? '測試' : '學習'}
+                {testMode ? t('modeTest') : t('modeLearn')}
               </Text>
             </TouchableOpacity>
           )}
@@ -382,8 +377,14 @@ export default function LessonScreen() {
             <View style={styles.stageLabelRow}>
               {activeStroke && (
                 <Text style={styles.strokeLabel}>
-                  第 {activeStrokeNum} 筆{phase === 'test' ? '' : `・${activeStroke.name}`}（共{' '}
-                  {strokes.length} 筆）
+                  {t('strokeLabel', {
+                    num: activeStrokeNum,
+                    suffix:
+                      phase === 'test' || !activeStroke
+                        ? ''
+                        : t('strokeSuffix', { name: activeStroke.name }),
+                    total: strokes.length,
+                  })}
                 </Text>
               )}
             </View>
@@ -432,7 +433,7 @@ export default function LessonScreen() {
                 </View>
                 <TouchableOpacity style={styles.primaryBtn} onPress={advance}>
                   <Text style={styles.primaryBtnText}>
-                    {charIdx + 1 < level.chars.length ? '下一個字' : '完成關卡'}
+                    {charIdx + 1 < level.chars.length ? t('nextChar') : t('finishLevel')}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -441,23 +442,23 @@ export default function LessonScreen() {
                 {(phase === 'follow' || phase === 'test') && strokeIdx > 0 && (
                   <TouchableOpacity style={styles.iconBtn} onPress={undoStroke} hitSlop={8}>
                     <Ionicons name="arrow-undo" size={18} color={Colors.inkLight} />
-                    <Text style={styles.iconBtnText}>上一筆</Text>
+                    <Text style={styles.iconBtnText}>{t('undoStroke')}</Text>
                   </TouchableOpacity>
                 )}
                 {(phase === 'follow' || phase === 'test') && (
                   <TouchableOpacity style={styles.iconBtn} onPress={useHint} hitSlop={8}>
                     <Ionicons name="bulb" size={18} color={Colors.gold} />
-                    <Text style={styles.iconBtnText}>提示</Text>
+                    <Text style={styles.iconBtnText}>{t('hint')}</Text>
                   </TouchableOpacity>
                 )}
                 {phase === 'test' && (
                   <TouchableOpacity style={styles.secondaryBtn} onPress={() => goToChar(charIdx)}>
-                    <Text style={styles.secondaryBtnText}>重寫此字</Text>
+                    <Text style={styles.secondaryBtnText}>{t('rewriteChar')}</Text>
                   </TouchableOpacity>
                 )}
                 {phase === 'intro' && (
                   <TouchableOpacity style={styles.secondaryBtn} onPress={startFollow}>
-                    <Text style={styles.secondaryBtnText}>跳過示範</Text>
+                    <Text style={styles.secondaryBtnText}>{t('skipDemo')}</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -480,11 +481,11 @@ export default function LessonScreen() {
                 />
                 {phase === 'intro' && Platform.OS !== 'web' && (
                   <View style={styles.veil} pointerEvents="none">
-                    <Text style={styles.veilText}>睇住上面先，跟住就到你寫</Text>
+                    <Text style={styles.veilText}>{t('watchFirst')}</Text>
                   </View>
                 )}
                 {phase === 'intro' && Platform.OS === 'web' && (
-                  <Text style={styles.webIntroHint}>睇住上面先，跟住就到你寫</Text>
+                  <Text style={styles.webIntroHint}>{t('watchFirst')}</Text>
                 )}
               </View>
             </View>
@@ -500,15 +501,15 @@ export default function LessonScreen() {
               size={56}
               color={Colors.gold}
             />
-            <Text style={styles.overlayTitle}>關卡完成！</Text>
+            <Text style={styles.overlayTitle}>{t('levelDone')}</Text>
             <Text style={styles.overlaySubtitle}>
-              你已經寫晒「{level.title}」嘅 {level.chars.length} 個字
+              {t('levelDoneSub', { title: levelDisplay.title, count: level.chars.length })}
             </Text>
             <Text style={styles.overlayStars}>
               ★ {levelStars(level, allStars)} / {level.chars.length * 3}
             </Text>
             {isLevelMastered(level, allStars) && (
-              <Text style={styles.overlayMedal}>滿星勳章攞到！</Text>
+              <Text style={styles.overlayMedal}>{t('fullStarMedal')}</Text>
             )}
             {levelIndex + 1 < LEVELS.length && (
               <TouchableOpacity
@@ -521,14 +522,16 @@ export default function LessonScreen() {
                   )
                 }
               >
-                <Text style={styles.primaryBtnText}>下一關：{LEVELS[levelIndex + 1].title}</Text>
+                <Text style={styles.primaryBtnText}>
+                  {t('nextLevel', { title: localizeLevel(LEVELS[levelIndex + 1]).title })}
+                </Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
               style={[styles.secondaryBtn, { marginTop: 12 }]}
               onPress={() => router.back()}
             >
-              <Text style={styles.secondaryBtnText}>返回首頁</Text>
+              <Text style={styles.secondaryBtnText}>{t('backHome')}</Text>
             </TouchableOpacity>
           </View>
         </View>

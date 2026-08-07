@@ -16,16 +16,17 @@ import {
   type Speed,
   type VoiceLang,
 } from '@/lib/speech';
+import { t } from '@/lib/i18n';
 
 const LANGS: { id: VoiceLang; label: string; sub: string }[] = [
-  { id: 'yue', label: '廣東話', sub: 'Cantonese' },
-  { id: 'cmn', label: '普通話', sub: 'Mandarin' },
+  { id: 'yue', label: t('voiceYue'), sub: 'Cantonese' },
+  { id: 'cmn', label: t('voiceCmn'), sub: 'Mandarin' },
 ];
 
 const SPEEDS: { id: Speed; label: string }[] = [
-  { id: 'slow', label: '慢' },
-  { id: 'normal', label: '正常' },
-  { id: 'fast', label: '快' },
+  { id: 'slow', label: t('speedSlow') },
+  { id: 'normal', label: t('speedNormal') },
+  { id: 'fast', label: t('speedFast') },
 ];
 
 export default function SettingsScreen() {
@@ -56,12 +57,12 @@ export default function SettingsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color={Colors.ink} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>設定</Text>
+        <Text style={styles.headerTitle}>{t('settings')}</Text>
         <View style={{ width: 30 }} />
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>朗讀語音</Text>
+        <Text style={styles.sectionTitle}>{t('voiceSection')}</Text>
         <View style={styles.row}>
           {LANGS.map((l) => (
             <TouchableOpacity
@@ -86,7 +87,7 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>朗讀速度</Text>
+        <Text style={styles.sectionTitle}>{t('speedSection')}</Text>
         <View style={styles.speedRow}>
           {SPEEDS.map((s) => (
             <TouchableOpacity
@@ -103,7 +104,7 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>展示筆順速度</Text>
+        <Text style={styles.sectionTitle}>{t('demoSpeedSection')}</Text>
         <View style={styles.speedRow}>
           {SPEEDS.map((s) => (
             <TouchableOpacity

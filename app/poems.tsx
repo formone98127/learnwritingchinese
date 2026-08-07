@@ -20,6 +20,7 @@ import {
   type Level,
 } from '@/data/curriculum';
 import { useProgress } from '@/lib/progress';
+import { localizeLevel, t } from '@/lib/i18n';
 
 function PoemCard({
   level,
@@ -40,6 +41,7 @@ function PoemCard({
   const done = progress === 1;
   const mastered = isLevelMastered(level, stars);
   const starCount = levelStars(level, stars);
+  const display = localizeLevel(level);
 
   return (
     <TouchableOpacity
@@ -60,11 +62,11 @@ function PoemCard({
       </View>
       <View style={styles.cardBody}>
         <View style={styles.cardTitleRow}>
-          <Text style={[styles.cardTitle, !unlocked && styles.textLocked]}>{level.title}</Text>
+          <Text style={[styles.cardTitle, !unlocked && styles.textLocked]}>{display.title}</Text>
           {mastered && <Ionicons name="medal" size={16} color={Colors.gold} />}
         </View>
         <Text style={[styles.cardSubtitle, !unlocked && styles.textLocked]}>
-          {level.subtitle}
+          {display.subtitle}
         </Text>
         <View style={styles.progressTrack}>
           <View
@@ -76,8 +78,12 @@ function PoemCard({
           />
         </View>
         <Text style={[styles.cardCount, !unlocked && styles.textLocked]}>
-          {Math.round(progress * level.chars.length)} / {level.chars.length} 字・★ {starCount} /{' '}
-          {level.chars.length * 3}
+          {t('charProgress', {
+            done: Math.round(progress * level.chars.length),
+            total: level.chars.length,
+            stars: starCount,
+            maxStars: level.chars.length * 3,
+          })}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={20} color={Colors.inkFaint} />
@@ -103,11 +109,13 @@ export default function PoemsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color={Colors.ink} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>詩詞練習</Text>
-        <Text style={styles.headerCount}>共 {poems.length} 首・勳章 {masteredCount}</Text>
+        <Text style={styles.headerTitle}>{t('poemsTitle')}</Text>
+        <Text style={styles.headerCount}>
+          {t('poemsHeader', { count: poems.length, medals: masteredCount })}
+        </Text>
       </View>
 
-      <Text style={styles.hint}>完成基本筆畫關卡後，就可以寫成一首詩</Text>
+      <Text style={styles.hint}>{t('poemsHint')}</Text>
 
       <ScrollView
         contentContainerStyle={[styles.list, wide && styles.listWide]}

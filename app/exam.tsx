@@ -19,6 +19,7 @@ import {
   type Level,
 } from '@/data/curriculum';
 import { useProgress } from '@/lib/progress';
+import { localizeLevel, t } from '@/lib/i18n';
 
 function ExamCard({
   level,
@@ -38,6 +39,7 @@ function ExamCard({
   const done = progress === 1;
   const mastered = isLevelMastered(level, stars);
   const starCount = levelStars(level, stars);
+  const display = localizeLevel(level);
 
   return (
     <TouchableOpacity
@@ -50,10 +52,10 @@ function ExamCard({
       </View>
       <View style={styles.cardBody}>
         <View style={styles.cardTitleRow}>
-          <Text style={styles.cardTitle}>{level.title}</Text>
+          <Text style={styles.cardTitle}>{display.title}</Text>
           {mastered && <Ionicons name="medal" size={16} color={Colors.gold} />}
         </View>
-        <Text style={styles.cardSubtitle}>{level.subtitle}</Text>
+        <Text style={styles.cardSubtitle}>{display.subtitle}</Text>
         <View style={styles.progressTrack}>
           <View
             style={[
@@ -64,8 +66,12 @@ function ExamCard({
           />
         </View>
         <Text style={styles.cardCount}>
-          {Math.round(progress * level.chars.length)} / {level.chars.length} 字・★ {starCount} /{' '}
-          {level.chars.length * 3}
+          {t('charProgress', {
+            done: Math.round(progress * level.chars.length),
+            total: level.chars.length,
+            stars: starCount,
+            maxStars: level.chars.length * 3,
+          })}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={20} color={Colors.inkFaint} />
@@ -90,15 +96,15 @@ export default function ExamScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color={Colors.ink} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>考核模式</Text>
-        <Text style={styles.headerCount}>勳章 {masteredCount} / {LEVELS.length}</Text>
+        <Text style={styles.headerTitle}>{t('examTitle')}</Text>
+        <Text style={styles.headerCount}>
+          {t('examMedals', { done: masteredCount, total: LEVELS.length })}
+        </Text>
       </View>
 
       <View style={styles.introBox}>
         <Ionicons name="school" size={22} color={Colors.vermillion} />
-        <Text style={styles.introText}>
-          考核模式冇示範，由你自己憑筆順寫出每個字。每筆都會計分，攞滿星就有勳章。
-        </Text>
+        <Text style={styles.introText}>{t('examIntro')}</Text>
       </View>
 
       <ScrollView

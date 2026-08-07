@@ -28,6 +28,7 @@ import {
 } from '@/data/curriculum';
 import { JYUTPING } from '@/data/jyutping';
 import { useProgress } from '@/lib/progress';
+import { localizeFocus, localizeLevel, t } from '@/lib/i18n';
 
 // curriculum order first, then any extra chars in the dataset (computed once)
 const CURRICULUM_CHARS = new Set(LEVELS.flatMap((l) => l.chars));
@@ -69,6 +70,7 @@ function LevelCard({
   const done = progress === 1;
   const mastered = isLevelMastered(level, stars);
   const starCount = levelStars(level, stars);
+  const display = localizeLevel(level);
 
   return (
     <TouchableOpacity
@@ -89,10 +91,10 @@ function LevelCard({
       </View>
       <View style={styles.cardBody}>
         <View style={styles.cardTitleRow}>
-          <Text style={[styles.cardTitle, !unlocked && styles.textLocked]}>{level.title}</Text>
+          <Text style={[styles.cardTitle, !unlocked && styles.textLocked]}>{display.title}</Text>
           {mastered && <Ionicons name="medal" size={16} color={Colors.gold} />}
         </View>
-        <Text style={[styles.cardSubtitle, !unlocked && styles.textLocked]}>{level.subtitle}</Text>
+        <Text style={[styles.cardSubtitle, !unlocked && styles.textLocked]}>{display.subtitle}</Text>
         <View style={styles.progressTrack}>
           <View
             style={[
@@ -103,14 +105,18 @@ function LevelCard({
           />
         </View>
         <Text style={[styles.cardCount, !unlocked && styles.textLocked]}>
-          {Math.round(progress * level.chars.length)} / {level.chars.length} 字・★ {starCount} /{' '}
-          {level.chars.length * 3}
+          {t('charProgress', {
+            done: Math.round(progress * level.chars.length),
+            total: level.chars.length,
+            stars: starCount,
+            maxStars: level.chars.length * 3,
+          })}
         </Text>
       </View>
       <View style={styles.chips}>
         {level.focus.map((f) => (
           <View key={f} style={styles.chip}>
-            <Text style={styles.chipText}>{f}</Text>
+            <Text style={styles.chipText}>{localizeFocus(f)}</Text>
           </View>
         ))}
       </View>
@@ -134,12 +140,12 @@ export default function HomeScreen() {
 
   const confirmReset = () => {
     if (Platform.OS === 'web') {
-      if (window.confirm('確定要清走晒所有學習進度？')) resetAll();
+      if (window.confirm(t('resetConfirm'))) resetAll();
       return;
     }
-    Alert.alert('重設進度', '確定要清走晒所有學習進度？', [
-      { text: '取消', style: 'cancel' },
-      { text: '重設', style: 'destructive', onPress: resetAll },
+    Alert.alert(t('resetTitle'), t('resetConfirm'), [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('reset'), style: 'destructive', onPress: resetAll },
     ]);
   };
 
@@ -198,8 +204,8 @@ export default function HomeScreen() {
             <Ionicons name="settings" size={22} color={Colors.ink} />
           </TouchableOpacity>
         </View>
-        <Text style={styles.appTitle}>筆順學堂</Text>
-        <Text style={styles.appSubtitle}>睇住寫，跟住寫，一筆一畫學繁體</Text>
+        <Text style={styles.appTitle}>{t('siteTitle')}</Text>
+        <Text style={styles.appSubtitle}>{t('appSubtitle')}</Text>
         <View style={styles.overallTrack}>
           <View style={[styles.overallFill, { width: `${overall * 100}%` }]} />
         </View>
@@ -209,7 +215,7 @@ export default function HomeScreen() {
         <Ionicons name="search" size={16} color={Colors.inkLight} />
         <TextInput
           style={styles.searchInput}
-          placeholder="查字典：輸入中文字或粵拼"
+          placeholder={t('searchPlaceholder')}
           placeholderTextColor={Colors.inkFaint}
           value={query}
           onChangeText={setQuery}
@@ -225,7 +231,7 @@ export default function HomeScreen() {
       {query.trim().length > 0 && (
         <View style={styles.searchResults}>
           {results.length === 0 ? (
-            <Text style={styles.searchEmpty}>字典搵唔到「{query.trim()}」</Text>
+            <Text style={styles.searchEmpty}>{t('searchEmpty', { query: query.trim() })}</Text>
           ) : (
             results.map((c) => (
               <TouchableOpacity
@@ -250,9 +256,9 @@ export default function HomeScreen() {
         >
           <Ionicons name="refresh-circle" size={22} color={Colors.jade} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.quickTitle}>今日複習</Text>
+            <Text style={styles.quickTitle}>{t('todayReview')}</Text>
             <Text style={styles.quickSub}>
-              {reviewCount > 0 ? `${reviewCount} 個字要溫` : '溫故知新'}
+              {reviewCount > 0 ? t('reviewDue', { count: reviewCount }) : t('reviewFresh')}
             </Text>
           </View>
           {reviewCount > 0 && (
@@ -268,13 +274,13 @@ export default function HomeScreen() {
         >
           <Ionicons name="stats-chart" size={22} color={Colors.vermillion} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.quickTitle}>學習報告</Text>
-            <Text style={styles.quickSub}>進度同弱項分析</Text>
+            <Text style={styles.quickTitle}>{t('learningReport')}</Text>
+            <Text style={styles.quickSub}>{t('reportSub')}</Text>
           </View>
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.sectionTitle}>基本筆畫</Text>
+      <Text style={styles.sectionTitle}>{t('basicStrokes')}</Text>
       {/* basics are stroke-type progressive; show with stage subtitles */}
       {(() => {
         const stageA = basics.slice(0, 6); // 橫豎撇捺點提
@@ -283,9 +289,9 @@ export default function HomeScreen() {
         return (
           <>
             {[
-              { title: '基本筆畫', levels: stageA },
-              { title: '複合筆畫', levels: stageB },
-              { title: '間架結構', levels: stageC },
+              { title: t('basicStrokes'), levels: stageA },
+              { title: t('compoundStrokes'), levels: stageB },
+              { title: t('structure'), levels: stageC },
             ].map(
               (group) =>
                 group.levels.length > 0 && (
@@ -310,7 +316,7 @@ export default function HomeScreen() {
         );
       })()}
 
-      <Text style={styles.sectionTitle}>更多練習</Text>
+      <Text style={styles.sectionTitle}>{t('morePractice')}</Text>
       <View style={[styles.cardGrid, wide && styles.cardGridWide]}>
         <TouchableOpacity
           style={[styles.entryCard, wide && styles.entryCardWide]}
@@ -321,9 +327,12 @@ export default function HomeScreen() {
             <Ionicons name="book" size={22} color="#FFFDF7" />
           </View>
           <View style={styles.entryBody}>
-            <Text style={styles.entryTitle}>詩詞練習</Text>
+            <Text style={styles.entryTitle}>{t('poemPractice')}</Text>
             <Text style={styles.entrySubtitle}>
-              共 {poems.length} 首古詩・勳章 {poems.filter((l) => isLevelMastered(l, stars)).length}
+              {t('poemCount', {
+                count: poems.length,
+                medals: poems.filter((l) => isLevelMastered(l, stars)).length,
+              })}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={Colors.inkFaint} />
@@ -338,15 +347,15 @@ export default function HomeScreen() {
             <Ionicons name="school" size={22} color="#FFFDF7" />
           </View>
           <View style={styles.entryBody}>
-            <Text style={styles.entryTitle}>考核模式</Text>
-            <Text style={styles.entrySubtitle}>冇示範，自己寫・攞滿星得勳章</Text>
+            <Text style={styles.entryTitle}>{t('examMode')}</Text>
+            <Text style={styles.entrySubtitle}>{t('examSub')}</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={Colors.inkFaint} />
         </TouchableOpacity>
       </View>
 
       <TouchableOpacity onPress={confirmReset} style={styles.resetBtn}>
-        <Text style={styles.resetText}>重設學習進度</Text>
+        <Text style={styles.resetText}>{t('resetProgress')}</Text>
       </TouchableOpacity>
 
       {/* profile picker modal */}
@@ -364,7 +373,7 @@ export default function HomeScreen() {
           {/* swallow taps on the card so they don't reach the backdrop */}
           <TouchableOpacity activeOpacity={1} onPress={() => {}}>
             <View style={styles.pickerCard}>
-            <Text style={styles.pickerTitle}>切換學習者</Text>
+            <Text style={styles.pickerTitle}>{t('switchProfile')}</Text>
             {profiles.map((p) => (
               <TouchableOpacity
                 key={p.id}
@@ -385,7 +394,7 @@ export default function HomeScreen() {
             ))}
             <TouchableOpacity style={styles.pickerAdd} onPress={promptAddProfile}>
               <Ionicons name="add" size={18} color={Colors.vermillion} />
-              <Text style={styles.pickerAddText}>新增學習者</Text>
+              <Text style={styles.pickerAddText}>{t('addProfile')}</Text>
             </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -401,10 +410,10 @@ export default function HomeScreen() {
       >
         <View style={styles.pickerBackdrop}>
           <View style={styles.pickerCard}>
-            <Text style={styles.pickerTitle}>新增學習者</Text>
+            <Text style={styles.pickerTitle}>{t('addProfile')}</Text>
             <TextInput
               style={styles.nameInput}
-              placeholder="輸入名稱"
+              placeholder={t('namePlaceholder')}
               placeholderTextColor={Colors.inkFaint}
               value={newName}
               onChangeText={setNewName}
@@ -416,13 +425,13 @@ export default function HomeScreen() {
                 style={[styles.secondaryBtn, { flex: 1 }]}
                 onPress={() => setAddProfileOpen(false)}
               >
-                <Text style={styles.secondaryBtnText}>取消</Text>
+                <Text style={styles.secondaryBtnText}>{t('cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.primaryBtn, { flex: 1, marginTop: 0 }]}
                 onPress={confirmAddProfile}
               >
-                <Text style={styles.primaryBtnText}>確定</Text>
+                <Text style={styles.primaryBtnText}>{t('confirm')}</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -3,13 +3,19 @@ import Head from 'expo-router/head';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { I18nManager, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { LaunchSplash } from '@/components/LaunchSplash';
 import { ThemeProvider, useTheme } from '@/constants/colors';
-import { SITE_DESCRIPTION, SITE_OG_IMAGE, SITE_TITLE, SITE_URL } from '@/constants/site';
+import { IS_RTL } from '@/constants/locale';
+import { SITE_DESCRIPTION, SITE_LOCALE, SITE_OG_IMAGE, SITE_TITLE, SITE_URL } from '@/constants/site';
 import { ProgressProvider } from '@/lib/progress';
+
+if (IS_RTL) {
+  I18nManager.allowRTL(true);
+  I18nManager.forceRTL(true);
+}
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -49,7 +55,7 @@ export default function RootLayout() {
         <meta property="og:title" content={SITE_TITLE} />
         <meta property="og:description" content={SITE_DESCRIPTION} />
         <meta property="og:image" content={SITE_OG_IMAGE} />
-        <meta property="og:locale" content="zh_HK" />
+        <meta property="og:locale" content={SITE_LOCALE} />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={SITE_TITLE} />
         <meta name="twitter:description" content={SITE_DESCRIPTION} />

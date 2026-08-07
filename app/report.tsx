@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/colors';
 import { LEVELS, isLevelMastered } from '@/data/curriculum';
 import { useProgress } from '@/lib/progress';
+import { t } from '@/lib/i18n';
 
 export default function ReportScreen() {
   const insets = useSafeAreaInsets();
@@ -71,21 +72,21 @@ export default function ReportScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color={Colors.ink} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>學習報告</Text>
+        <Text style={styles.headerTitle}>{t('reportTitle')}</Text>
         <View style={{ width: 30 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        <Text style={styles.greeting}>{profile.name} 嘅學習進度</Text>
+        <Text style={styles.greeting}>{t('reportGreeting', { name: profile.name })}</Text>
 
         <View style={styles.statRow}>
-          <StatCard icon="create" label="已寫字" value={String(stats.totalChars)} color={Colors.vermillion} />
-          <StatCard icon="star" label="滿星字" value={String(stats.threeStars)} color={Colors.gold} />
-          <StatCard icon="medal" label="勳章" value={String(stats.masteredLevels)} color={Colors.jade} />
-          <StatCard icon="flame" label="連續日" value={String(stats.streak)} color={Colors.vermillion} />
+          <StatCard icon="create" label={t('statWritten')} value={String(stats.totalChars)} color={Colors.vermillion} />
+          <StatCard icon="star" label={t('statThreeStar')} value={String(stats.threeStars)} color={Colors.gold} />
+          <StatCard icon="medal" label={t('statMedals')} value={String(stats.masteredLevels)} color={Colors.jade} />
+          <StatCard icon="flame" label={t('statStreak')} value={String(stats.streak)} color={Colors.vermillion} />
         </View>
 
-        <Text style={styles.sectionTitle}>最近 7 日</Text>
+        <Text style={styles.sectionTitle}>{t('last7Days')}</Text>
         <View style={styles.chartCard}>
           <View style={styles.chartRow}>
             {stats.week.map((w) => (
@@ -103,7 +104,7 @@ export default function ReportScreen() {
 
         {stats.weakest.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>需要加強嘅字</Text>
+            <Text style={styles.sectionTitle}>{t('weakChars')}</Text>
             <View style={styles.weakCard}>
               {stats.weakest.map(({ char, acc }) => (
                 <TouchableOpacity

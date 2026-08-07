@@ -23,6 +23,7 @@ import { CHAR_RADICAL, RADICAL_NAME } from '@/data/radicals';
 import { playSound } from '@/lib/sounds';
 import { speakChar, stopSpeech } from '@/lib/speech';
 import { buildStrokes } from '@/lib/strokeGeometry';
+import { t } from '@/lib/i18n';
 
 export default function CharScreen() {
   const params = useLocalSearchParams<{ char: string }>();
@@ -67,9 +68,9 @@ export default function CharScreen() {
   if (!char || strokes.length === 0) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
-        <Text style={styles.errorText}>字典未收錄「{char}」</Text>
+        <Text style={styles.errorText}>{t('dictMissing', { char })}</Text>
         <TouchableOpacity onPress={() => router.back()} style={styles.primaryBtn}>
-          <Text style={styles.primaryBtnText}>返回</Text>
+          <Text style={styles.primaryBtnText}>{t('back')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -99,7 +100,7 @@ export default function CharScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color={Colors.ink} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>查字典</Text>
+        <Text style={styles.headerTitle}>{t('dictTitle')}</Text>
         <View style={{ width: 30 }} />
       </View>
 
@@ -114,9 +115,9 @@ export default function CharScreen() {
               </TouchableOpacity>
             </View>
             <Text style={styles.strokeCount}>
-              共 {strokes.length} 筆
+              {t('strokeTotal', { count: strokes.length })}
               {CHAR_RADICAL[char] && RADICAL_NAME[CHAR_RADICAL[char]]
-                ? `　部首：${RADICAL_NAME[CHAR_RADICAL[char]]}`
+                ? t('radical', { name: RADICAL_NAME[CHAR_RADICAL[char]] })
                 : ''}
             </Text>
 
@@ -134,12 +135,12 @@ export default function CharScreen() {
 
             <TouchableOpacity style={styles.secondaryBtn} onPress={replay}>
               <Ionicons name="refresh" size={15} color={Colors.inkLight} />
-              <Text style={styles.secondaryBtnText}>重播筆順</Text>
+              <Text style={styles.secondaryBtnText}>{t('replayStrokes')}</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.practiceBox}>
-            <Text style={styles.practiceLabel}>試寫</Text>
+            <Text style={styles.practiceLabel}>{t('tryWrite')}</Text>
             <TracePad
               strokes={strokes}
               size={traceSize}

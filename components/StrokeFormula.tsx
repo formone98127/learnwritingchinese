@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Colors } from '@/constants/colors';
+import { t } from '@/lib/i18n';
 
 type Props = {
   rules: string[];
@@ -12,7 +13,7 @@ export function StrokeFormula({ rules }: Props) {
   const compact = rules.length > 3;
   return (
     <View style={[styles.formula, compact && styles.formulaCompact]}>
-      <Text style={[styles.label, compact && styles.labelCompact]}>口訣</Text>
+      <Text style={[styles.label, compact && styles.labelCompact]}>{t('formulaLabel')}</Text>
       {rules.map((rule) => (
         <View key={rule} style={[styles.pill, compact && styles.pillCompact]}>
           <Text style={[styles.pillText, compact && styles.pillTextCompact]}>{rule}</Text>

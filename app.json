@@ -24,8 +24,8 @@
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png",
-      "name": "筆順學堂",
-      "description": "睇住寫，跟住寫，一筆一畫學繁體"
+      "name": "لکھائی کی ترتیب",
+      "description": "دیکھیں، لکھیں، ایک ایک لکیر سے روایتی چینی سیکھیں"
     },
     "plugins": [
       "expo-router",
@@ -46,7 +46,7 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true,
-      "baseUrl": "/learnwritingchinese"
+      "baseUrl": "/learnwritingchinese/ur"
     },
     "extra": {
       "router": {},

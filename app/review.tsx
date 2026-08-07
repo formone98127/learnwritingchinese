@@ -15,6 +15,7 @@ import { Colors } from '@/constants/colors';
 import { STROKE_DATA } from '@/data/characters';
 import { JYUTPING } from '@/data/jyutping';
 import { useProgress } from '@/lib/progress';
+import { t } from '@/lib/i18n';
 
 const WEAK_THRESHOLD = 0.55;
 
@@ -55,24 +56,20 @@ export default function ReviewScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color={Colors.ink} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>今日複習</Text>
-        <Text style={styles.headerCount}>{weakChars.length} 字</Text>
+        <Text style={styles.headerTitle}>{t('reviewTitle')}</Text>
+        <Text style={styles.headerCount}>{t('reviewCount', { count: weakChars.length })}</Text>
       </View>
 
       <View style={styles.introBox}>
         <Ionicons name="refresh-circle" size={22} color={Colors.jade} />
-        <Text style={styles.introText}>
-          呢啲係你之前寫得唔夠準、或者好耐冇練嘅字。溫故知新，寫多次會記得牢啲。
-        </Text>
+        <Text style={styles.introText}>{t('reviewIntro')}</Text>
       </View>
 
       {weakChars.length === 0 ? (
         <View style={styles.emptyBox}>
           <Ionicons name="checkmark-circle" size={56} color={Colors.jade} />
-          <Text style={styles.emptyTitle}>全部記熟晒！</Text>
-          <Text style={styles.emptyText}>
-            你已掌握 {masteredCount} 個滿星字。去學新關卡，或者聽日再返嚟複習。
-          </Text>
+          <Text style={styles.emptyTitle}>{t('reviewEmptyTitle')}</Text>
+          <Text style={styles.emptyText}>{t('reviewEmptyText', { count: masteredCount })}</Text>
         </View>
       ) : (
         <ScrollView contentContainerStyle={[styles.grid, wide && styles.gridWide]} showsVerticalScrollIndicator={false}>

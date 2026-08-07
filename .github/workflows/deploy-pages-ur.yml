@@ -1,0 +1,71 @@
+name: Deploy Urdu Web to GitHub Pages
+
+on:
+  push:
+    branches: [web/urdu-stroke-order]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - run: npm ci
+
+      - name: Export Urdu web build
+        run: npx expo export --platform web
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+          EXPO_NO_TELEMETRY: 1
+
+      - name: Stage Urdu build under /ur
+        run: |
+          mkdir -p pages-root/ur
+          shopt -s dotglob
+          mv dist/* pages-root/ur/
+          touch pages-root/ur/.nojekyll
+
+      - name: Export Chinese web build from master
+        run: |
+          git stash push -u -m ci || true
+          git checkout origin/master
+          npm ci
+          npx expo export --platform web
+          shopt -s dotglob
+          mv dist/* pages-root/
+          touch pages-root/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages-root
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

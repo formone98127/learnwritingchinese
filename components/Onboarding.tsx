@@ -4,36 +4,15 @@ import { useEffect, useState } from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 
 import { Colors } from '@/constants/colors';
+import { onboardingSteps, t } from '@/lib/i18n';
 
 const KEY = 'strokeapp.onboarded';
-
-const STEPS = [
-  {
-    icon: 'hand-left',
-    title: '跟住紅點寫',
-    text: '由紅點開始，跟住虛線一筆一畫寫。寫得準就有星！',
-  },
-  {
-    icon: 'eye',
-    title: '先睇示範',
-    text: '每個字會先示範筆順，睇完就自己寫。可以跳過示範直接寫。',
-  },
-  {
-    icon: 'school',
-    title: '測試同考核',
-    text: '學完一關，可以切換「測試」或者去「考核模式」，冇示範靠自己寫。',
-  },
-  {
-    icon: 'medal',
-    title: '攞勳章',
-    text: '每個字寫滿 3 星，成關攞滿星就有勳章。仲有複習同報告幫你記得牢！',
-  },
-];
 
 export function Onboarding() {
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
   const { width } = useWindowDimensions();
+  const steps = onboardingSteps();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -43,8 +22,8 @@ export function Onboarding() {
   }, []);
 
   if (!visible) return null;
-  const s = STEPS[step];
-  const last = step === STEPS.length - 1;
+  const s = steps[step];
+  const last = step === steps.length - 1;
 
   const finish = () => {
     setVisible(false);
@@ -62,7 +41,7 @@ export function Onboarding() {
           <Text style={styles.text}>{s.text}</Text>
 
           <View style={styles.dots}>
-            {STEPS.map((_, i) => (
+            {steps.map((_, i) => (
               <View key={i} style={[styles.dot, i === step && styles.dotActive]} />
             ))}
           </View>
@@ -70,14 +49,14 @@ export function Onboarding() {
           <View style={styles.btnRow}>
             {!last && (
               <TouchableOpacity onPress={finish} hitSlop={8}>
-                <Text style={styles.skip}>跳過</Text>
+                <Text style={styles.skip}>{t('onboardingSkip')}</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
               style={styles.nextBtn}
               onPress={() => (last ? finish() : setStep(step + 1))}
             >
-              <Text style={styles.nextText}>{last ? '開始學習' : '下一步'}</Text>
+              <Text style={styles.nextText}>{last ? t('onboardingStart') : t('onboardingNext')}</Text>
             </TouchableOpacity>
           </View>
         </View>
