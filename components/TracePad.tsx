@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, StyleSheet, Text, View } from 'react-native';
+import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { Colors } from '@/constants/colors';
@@ -284,7 +284,10 @@ export function TracePad({
 
   return (
     <View>
-      <View style={{ width: size, height: size }} {...pan.panHandlers}>
+      <View
+        style={[{ width: size, height: size }, Platform.OS === 'web' && webPad]}
+        {...pan.panHandlers}
+      >
         <MiGrid size={size} />
         <StrokeChar
           strokes={strokes}
@@ -292,7 +295,7 @@ export function TracePad({
           filledCount={strokeIndex}
           highlightIndex={hideGuides ? -1 : strokeIndex}
         />
-        <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+        <Svg width={size} height={size} style={StyleSheet.absoluteFill} pointerEvents="none">
           {showGhost && samples.length > 0 && (
             <>
               <Path
@@ -338,3 +341,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
+
+const webPad = Platform.OS === 'web' ? ({ touchAction: 'none', cursor: 'crosshair' } as const) : null;

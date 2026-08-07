@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef } from 'react';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -16,6 +16,13 @@ type Props = {
 
 /** Branded app launch overlay — fades in, holds, then fades out. */
 export function LaunchSplash({ onFinish }: Props) {
+  const finishedRef = useRef(false);
+  const safeFinish = useCallback(() => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    onFinish();
+  }, [onFinish]);
+
   const overlay = useSharedValue(1);
   const title = useSharedValue(0);
   const rule = useSharedValue(0);
@@ -28,10 +35,13 @@ export function LaunchSplash({ onFinish }: Props) {
     overlay.value = withDelay(
       2400,
       withTiming(0, { duration: 550 }, (done) => {
-        if (done) runOnJS(onFinish)();
+        if (done) runOnJS(safeFinish)();
       }),
     );
-  }, [credit, onFinish, overlay, rule, title]);
+    // web: reanimated runOnJS callback may not fire — always unmount via timeout
+    const fallback = setTimeout(safeFinish, Platform.OS === 'web' ? 2800 : 3500);
+    return () => clearTimeout(fallback);
+  }, [credit, overlay, rule, safeFinish, title]);
 
   const overlayStyle = useAnimatedStyle(() => ({ opacity: overlay.value }));
   const titleStyle = useAnimatedStyle(() => ({
@@ -48,13 +58,18 @@ export function LaunchSplash({ onFinish }: Props) {
   }));
 
   return (
-    <Animated.View style={[styles.overlay, overlayStyle]} pointerEvents="auto">
-      <View style={styles.center}>
-        <Animated.Text style={[styles.title, titleStyle]}>筆順學堂</Animated.Text>
-        <Animated.View style={[styles.rule, ruleStyle]} />
-        <Animated.Text style={[styles.credit, creditStyle]}>by Hagan Creactive</Animated.Text>
-      </View>
-    </Animated.View>
+    <Pressable style={styles.overlay} onPress={safeFinish} accessibilityRole="button">
+      <Animated.View style={[StyleSheet.absoluteFillObject, overlayStyle]} pointerEvents="none">
+        <View style={styles.center}>
+          <Animated.Text style={[styles.title, titleStyle]}>筆順學堂</Animated.Text>
+          <Animated.View style={[styles.rule, ruleStyle]} />
+          <Animated.Text style={[styles.credit, creditStyle]}>by Hagan Creactive</Animated.Text>
+          {Platform.OS === 'web' && (
+            <Animated.Text style={[styles.tapHint, creditStyle]}>點擊繼續</Animated.Text>
+          )}
+        </View>
+      </Animated.View>
+    </Pressable>
   );
 }
 
@@ -87,5 +102,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.gold,
     letterSpacing: 2,
+  },
+  tapHint: {
+    marginTop: 28,
+    fontSize: 13,
+    color: Colors.inkLight,
   },
 });

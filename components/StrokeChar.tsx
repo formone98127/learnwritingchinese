@@ -15,7 +15,7 @@ type Props = {
 
 export function StrokeChar({ strokes, size, filledCount, highlightIndex = -1 }: Props) {
   return (
-    <Svg width={size} height={size} viewBox={`0 0 ${BOX} ${BOX}`}>
+    <Svg width={size} height={size} viewBox={`0 0 ${BOX} ${BOX}`} pointerEvents="none">
       <G transform={`translate(0, ${BASELINE}) scale(1, -1)`}>
         {strokes.map((s, i) => {
           const done = i < filledCount;

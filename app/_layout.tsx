@@ -2,6 +2,8 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
+import { StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { LaunchSplash } from '@/components/LaunchSplash';
 import { ThemeProvider, useTheme } from '@/constants/colors';
@@ -35,11 +37,17 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <ThemeProvider>
-      <ProgressProvider>
-        <ThemedStack />
-        {nativeHidden && !splashDone && <LaunchSplash onFinish={() => setSplashDone(true)} />}
-      </ProgressProvider>
-    </ThemeProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <ThemeProvider>
+        <ProgressProvider>
+          <ThemedStack />
+          {nativeHidden && !splashDone && <LaunchSplash onFinish={() => setSplashDone(true)} />}
+        </ProgressProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});
