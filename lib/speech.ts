@@ -11,7 +11,16 @@ const LANG_KEY = 'strokeapp.voiceLang';
 const SPEED_KEY = 'strokeapp.speed';
 const DEMO_KEY = 'strokeapp.demoSpeed';
 const SPEED_MAP: Record<Speed, number> = { slow: 0.75, normal: 1, fast: 1.3 };
-const DEMO_MAP: Record<Speed, number> = { slow: 1.5, normal: 1, fast: 0.65 };
+const DEMO_MAP: Record<Speed, number> = { slow: 2.6, normal: 1, fast: 0.6 };
+
+let demoSpeedListeners = new Set<() => void>();
+
+export function subscribeDemoSpeed(listener: () => void): () => void {
+  demoSpeedListeners.add(listener);
+  return () => {
+    demoSpeedListeners.delete(listener);
+  };
+}
 
 let lang: VoiceLang = 'yue';
 let speed: Speed = 'normal';
@@ -61,6 +70,7 @@ export function setDemoSpeed(s: Speed) {
   demoSpeed = s;
   demoDirty = true;
   if (typeof window !== 'undefined') AsyncStorage.setItem(DEMO_KEY, s);
+  demoSpeedListeners.forEach((fn) => fn());
 }
 export function getDemoDurationMultiplier(): number {
   return DEMO_MAP[demoSpeed];

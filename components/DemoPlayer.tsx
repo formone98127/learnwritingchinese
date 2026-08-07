@@ -12,13 +12,28 @@ import Animated, {
 import Svg, { Path } from 'react-native-svg';
 
 import { Colors } from '@/constants/colors';
-import { getDemoDurationMultiplier, speakStrokeName } from '@/lib/speech';
+import { getDemoDurationMultiplier, speakStrokeName, subscribeDemoSpeed } from '@/lib/speech';
 import { BOX, pointsToPath } from '@/lib/strokeGeometry';
 import type { StrokeInfo } from '@/lib/types';
 
 import { StrokeChar } from './StrokeChar';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
+
+function demoStrokeDuration(strokeLen: number, mode: 'full' | 'loop'): number {
+  const mult = getDemoDurationMultiplier();
+  const normalized = strokeLen / BOX;
+  const baseMs = 700 + normalized * 2400;
+  const minMs = (mode === 'full' ? 750 : 450) * mult;
+  const maxMs = (mode === 'full' ? 4200 : 2200) * mult;
+  return Math.round(Math.max(minMs, Math.min(maxMs, baseMs * mult)));
+}
+
+function demoStrokePause(mode: 'full' | 'loop', strokeIndex: number, loopCycle: number): number {
+  const mult = getDemoDurationMultiplier();
+  if (mode === 'loop') return loopCycle > 0 ? Math.round(450 * mult) : 0;
+  return strokeIndex > 0 ? Math.round(320 * mult) : 0;
+}
 
 type Props = {
   strokes: StrokeInfo[];
@@ -48,6 +63,7 @@ export function DemoPlayer({
   const [idx, setIdx] = useState(0);
   const [cycle, setCycle] = useState(0);
   const [playNonce, setPlayNonce] = useState(0);
+  const [demoSpeedTick, setDemoSpeedTick] = useState(0);
   const offset = useSharedValue(1);
   const finishedRef = useRef(false);
   const onFinishedRef = useRef(onFinished);
@@ -71,13 +87,14 @@ export function DemoPlayer({
   const bumpIdx = useCallback(() => setIdx((i) => i + 1), []);
   const bumpCycle = useCallback(() => setCycle((c) => c + 1), []);
 
+  useEffect(() => subscribeDemoSpeed(() => setDemoSpeedTick((t) => t + 1)), []);
+
   useEffect(() => {
     setIdx(0);
     setCycle(0);
     finishedRef.current = false;
   }, [replayToken, strokes, mode, loopIndex]);
 
-  // Resume current stroke after app background or layout size change.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       if (next === 'active') setPlayNonce((n) => n + 1);
@@ -99,18 +116,15 @@ export function DemoPlayer({
     if (!stroke) return;
 
     const len = stroke.length * scale;
-    const mult = getDemoDurationMultiplier() || 1;
-    const duration = Math.max(
-      200,
-      Math.round(Math.min(1400, Math.max(480, (stroke.length / BOX) * 1100)) * mult),
-    );
+    const duration = demoStrokeDuration(stroke.length, mode);
+    const pause = demoStrokePause(mode, activeIndex, cycle);
     if (speak && (mode === 'full' || cycle === 0)) speakStrokeName(stroke.name);
     onStrokeStartRef.current?.(activeIndex);
 
     cancelAnimation(offset);
     offset.value = len;
     offset.value = withDelay(
-      mode === 'loop' && cycle > 0 ? 450 : 0,
+      pause,
       withTiming(0, { duration, easing: Easing.inOut(Easing.quad) }, (finished) => {
         if (!finished) return;
         if (mode === 'loop') {
@@ -121,7 +135,7 @@ export function DemoPlayer({
       }),
     );
     return () => cancelAnimation(offset);
-  }, [activeIndex, bumpCycle, bumpIdx, cycle, idx, mode, playNonce, scale, size, speak, strokes]);
+  }, [activeIndex, bumpCycle, bumpIdx, cycle, demoSpeedTick, idx, mode, playNonce, scale, size, speak, strokes]);
 
   const filledCount = mode === 'loop' ? loopIndex : Math.min(idx, strokes.length);
   const highlight = current ? activeIndex : -1;

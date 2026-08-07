@@ -1,6 +1,6 @@
 import type { Level } from '@/data/curriculum';
 import { APP_LOCALE, type AppLocale } from '@/constants/locale';
-import { FOCUS_UR, LEVEL_UR, STAGE_UR } from '@/lib/i18n/levels-ur';
+import { strokeRuleExplanation } from '@/lib/i18n/stroke-rules-ur';
 import type { StrokeError } from '@/components/TracePad';
 
 type Params = Record<string, string | number>;
@@ -74,6 +74,7 @@ const MESSAGES = {
     replayStrokes: '重播筆順',
     tryWrite: '試寫',
     formulaLabel: '口訣',
+    formulaTapHint: '',
     modeLearn: '學習',
     modeTest: '測試',
     strokeLabel: '第 {num} 筆{suffix}（共 {total} 筆）',
@@ -183,6 +184,7 @@ const MESSAGES = {
     replayStrokes: 'لکیروں کی ترتیب دوبارہ',
     tryWrite: 'لکھ کر دیکھیں',
     formulaLabel: 'اصول',
+    formulaTapHint: 'وضاحت کے لیے ٹیپ کریں',
     modeLearn: 'سیکھیں',
     modeTest: 'ٹیسٹ',
     strokeLabel: 'لکیر {num}{suffix} (کل {total})',
@@ -269,6 +271,15 @@ const PRAISE_KEYS: MessageKey[] = ['praise1', 'praise2', 'praise3', 'praise4'];
 
 export function randomPraiseUi(): string {
   return t(PRAISE_KEYS[Math.floor(Math.random() * PRAISE_KEYS.length)]);
+}
+
+export function explainStrokeRule(rule: string): string | null {
+  if (APP_LOCALE === 'zh-HK') return null;
+  return strokeRuleExplanation(rule);
+}
+
+export function showStrokeRuleHints(): boolean {
+  return APP_LOCALE !== 'zh-HK';
 }
 
 export function onboardingSteps() {

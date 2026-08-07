@@ -189,6 +189,25 @@ export function buildStrokes(data: CharStrokeData, nameOverride?: string[]): Str
 
 export const SAMPLE_COUNT = 24;
 
+/** Trace must cover the full resampled median before a stroke passes. */
+export function strokeTraceComplete(
+  sampleCount: number,
+  covered: ReadonlySet<number>,
+  furthest: number,
+  dotLike = false,
+): boolean {
+  if (sampleCount < 2) return false;
+  if (dotLike) {
+    return covered.has(0) && covered.size >= Math.ceil(sampleCount * 0.4);
+  }
+  if (furthest < sampleCount - 1) return false;
+  if (!covered.has(0) || !covered.has(sampleCount - 1)) return false;
+  for (let i = 0; i < sampleCount; i++) {
+    if (!covered.has(i)) return false;
+  }
+  return true;
+}
+
 /** Resampled screen-space samples of a stroke median for trace validation. */
 export function traceSamples(median: Point[], size: number): Point[] {
   const s = size / BOX;

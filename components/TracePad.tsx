@@ -9,7 +9,7 @@ import { Colors } from '@/constants/colors';
 import { speakError } from '@/lib/speech';
 import { getErrorHints } from '@/lib/i18n';
 import { playSound } from '@/lib/sounds';
-import { pointsToPath, traceSamples } from '@/lib/strokeGeometry';
+import { pointsToPath, strokeTraceComplete, traceSamples } from '@/lib/strokeGeometry';
 import type { Point, StrokeInfo } from '@/lib/types';
 
 import { MiGrid } from './MiGrid';
@@ -137,7 +137,7 @@ export function TracePad({
   function collectPoint(p: Point) {
     const s = samplesRef.current;
     const r = dotLikeRef.current ? radiusRef.current * 1.6 : radiusRef.current;
-    const gate = dotLikeRef.current ? s.length : furthestRef.current + 4;
+    const gate = dotLikeRef.current ? s.length : furthestRef.current + 2;
     let maxNew = -1;
     let minD = Infinity;
     for (let i = 0; i < s.length; i++) {
@@ -158,12 +158,11 @@ export function TracePad({
 
   function tryComplete() {
     const total = samplesRef.current.length;
-    const covered = coveredRef.current.size;
+    const covered = coveredRef.current;
     if (
       doneRef.current ||
       total < 2 ||
-      covered < Math.ceil(total * 0.8) ||
-      furthestRef.current < total - 3
+      !strokeTraceComplete(total, covered, furthestRef.current, dotLikeRef.current)
     ) {
       return;
     }
@@ -246,7 +245,12 @@ export function TracePad({
       startedRef.current = false;
       return;
     }
-    if (startedRef.current && furthestRef.current < samplesRef.current.length - 3) {
+    if (startedRef.current && !strokeTraceComplete(
+      samplesRef.current.length,
+      coveredRef.current,
+      furthestRef.current,
+      dotLikeRef.current,
+    )) {
       restartsRef.current += 1;
       coveredRef.current = new Set();
       furthestRef.current = -1;
