@@ -1,19 +1,14 @@
 import * as Haptics from 'expo-haptics';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  type GestureResponderEvent,
-  PanResponder,
-  Platform,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, StyleSheet, Text, View } from 'react-native';
+import { runOnJS } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { Colors } from '@/constants/colors';
 import { speakError } from '@/lib/speech';
 import { playSound } from '@/lib/sounds';
-import { SAMPLE_COUNT, pointsToPath, traceSamples } from '@/lib/strokeGeometry';
+import { pointsToPath, traceSamples } from '@/lib/strokeGeometry';
 import type { Point, StrokeInfo } from '@/lib/types';
 
 import { MiGrid } from './MiGrid';
@@ -30,19 +25,12 @@ export type StrokeError =
 type Props = {
   strokes: StrokeInfo[];
   size: number;
-  /** which stroke the user must trace now */
   strokeIndex: number;
-  /** called with an accuracy score 0..1 for the completed stroke */
   onStrokeDone: (score: number) => void;
-  /** bump when the target char changes so internal state resets */
   charToken: string;
-  /** ignore all touches (e.g. while the intro demo is still playing) */
   disabled?: boolean;
-  /** test mode: hide start dot and dashed median guide */
   hideGuides?: boolean;
-  /** bump to flash the next-stroke ghost even when guides are hidden */
   hintFlash?: number;
-  /** custom error hint text overrides */
   errorHints?: Partial<Record<StrokeError, string>>;
 };
 
@@ -56,6 +44,19 @@ const DEFAULT_ERROR_HINT: Record<StrokeError, string> = {
   'wrong-direction': '方向倒轉咗，跟返箭嘴寫',
   incomplete: '未寫完呢筆，繼續',
 };
+
+function resolvePadElement(ref: React.RefObject<View | null>, id?: string): HTMLElement | null {
+  if (Platform.OS === 'web' && id && typeof document !== 'undefined') {
+    const byId = document.getElementById(id);
+    if (byId) return byId;
+  }
+  let node = ref.current as unknown as HTMLElement | null;
+  for (let depth = 0; node && depth < 4; depth++) {
+    if (typeof node.getBoundingClientRect === 'function') return node;
+    node = (node as unknown as { firstElementChild?: HTMLElement }).firstElementChild ?? node.parentElement;
+  }
+  return null;
+}
 
 export function TracePad({
   strokes,
@@ -78,7 +79,6 @@ export function TracePad({
     () => traceSamples(strokes[strokeIndex].median, size),
     [strokes, strokeIndex, size],
   );
-  // degenerate median (empty or single point) can never be traced — auto-complete it
   const degenerate = samples.length < 2;
 
   const samplesRef = useRef(samples);
@@ -114,6 +114,8 @@ export function TracePad({
   const distCountRef = useRef(0);
   const wrongStartsRef = useRef(0);
   const restartsRef = useRef(0);
+  const padRef = useRef<View>(null);
+  const padDomId = `trace-pad-${charToken}-${strokeIndex}`;
 
   useEffect(() => {
     coveredRef.current = new Set();
@@ -127,7 +129,6 @@ export function TracePad({
     restartsRef.current = 0;
     setTrace([]);
     setHint(hintDefault);
-    // a stroke with no usable median can't be traced — skip it automatically
     if (degenerate && !doneRef.current) {
       doneRef.current = true;
       onStrokeDoneRef.current(0.5);
@@ -135,7 +136,6 @@ export function TracePad({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strokeIndex, charToken, hintDefault, degenerate]);
 
-  // flash the next-stroke ghost briefly when hintFlash bumps
   useEffect(() => {
     if (hintFlash === 0) return;
     setFlashGhost(true);
@@ -143,7 +143,6 @@ export function TracePad({
     return () => clearTimeout(t);
   }, [hintFlash]);
 
-  /** raw distance to the closest sample (uncapped) */
   function rawDistToStroke(p: Point): number {
     const s = samplesRef.current;
     let min = Infinity;
@@ -218,34 +217,11 @@ export function TracePad({
     if (errorKey) speakError(errorKey);
   }
 
-  const padRef = useRef<View>(null);
-
-  /** RN-web reports locationX/Y relative to hit child (SVG), not the pad — breaks mobile tracing. */
-  function eventToLocal(e: GestureResponderEvent): Point {
-    if (Platform.OS !== 'web') {
-      return { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY };
-    }
-    const ne = e.nativeEvent as GestureResponderEvent['nativeEvent'] & {
-      pageX?: number;
-      pageY?: number;
-      touches?: { pageX: number; pageY: number }[];
-      changedTouches?: { pageX: number; pageY: number }[];
-    };
-    const touch = ne.touches?.[0] ?? ne.changedTouches?.[0] ?? ne;
-    const pageX = touch.pageX ?? ne.pageX ?? 0;
-    const pageY = touch.pageY ?? ne.pageY ?? 0;
-    const node = padRef.current as unknown as HTMLElement | null;
-    const rect = node?.getBoundingClientRect?.();
-    if (rect) return { x: pageX - rect.left, y: pageY - rect.top };
-    return { x: ne.locationX, y: ne.locationY };
-  }
-
-  function onGrant(e: GestureResponderEvent) {
+  const onGrantPoint = useCallback((p: Point) => {
     if (doneRef.current || disabledRef.current) return;
     const s = samplesRef.current;
     if (s.length < 2) return;
     const r = radiusRef.current;
-    const p = eventToLocal(e);
     const d0 = Math.hypot(s[0].x - p.x, s[0].y - p.y);
     const dEnd = Math.hypot(s[s.length - 1].x - p.x, s[s.length - 1].y - p.y);
     if (d0 < r * 2.2 && (dotLikeRef.current || dEnd > r * 1.5)) {
@@ -268,11 +244,10 @@ export function TracePad({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       speakError(hintKey);
     }
-  }
+  }, []);
 
-  function onMove(e: GestureResponderEvent) {
+  const onMovePoint = useCallback((p: Point) => {
     if (doneRef.current || !startedRef.current) return;
-    const p = eventToLocal(e);
     if (rawDistToStroke(p) > radiusRef.current * 2.0) {
       wipeAttempt(hintsRef.current.sloppy, 'sloppy');
       return;
@@ -281,9 +256,9 @@ export function TracePad({
     setTrace(traceRef.current);
     collectPoint(p);
     tryComplete();
-  }
+  }, []);
 
-  function onRelease() {
+  const onReleasePoint = useCallback(() => {
     if (doneRef.current) return;
     if (startedRef.current) tryComplete();
     if (doneRef.current) {
@@ -300,87 +275,143 @@ export function TracePad({
       speakError('incomplete');
     }
     startedRef.current = false;
-  }
+  }, []);
 
-  const pan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: onGrant,
-      onPanResponderMove: onMove,
-      onPanResponderRelease: onRelease,
-      onPanResponderTerminate: onRelease,
-    }),
-  ).current;
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .minDistance(0)
+        .shouldCancelWhenOutside(false)
+        .onBegin((e) => {
+          runOnJS(onGrantPoint)({ x: e.x, y: e.y });
+        })
+        .onUpdate((e) => {
+          runOnJS(onMovePoint)({ x: e.x, y: e.y });
+        })
+        .onFinalize(() => {
+          runOnJS(onReleasePoint)();
+        }),
+    [onGrantPoint, onMovePoint, onReleasePoint],
+  );
 
-  // Mobile Safari: direct touch handlers are more reliable than PanResponder on web.
-  const webTouchHandlers =
-    Platform.OS === 'web'
-      ? {
-          onTouchStart: (e: GestureResponderEvent) => {
-            e.preventDefault?.();
-            onGrant(e);
-          },
-          onTouchMove: (e: GestureResponderEvent) => {
-            e.preventDefault?.();
-            onMove(e);
-          },
-          onTouchEnd: () => onRelease(),
-          onTouchCancel: () => onRelease(),
-        }
-      : {};
+  // Web (especially mobile Safari): RN touch handlers are passive / wrong coords — bind pointer events on DOM.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    let el: HTMLElement | null = null;
+    let activePointer: number | null = null;
+
+    const toLocal = (clientX: number, clientY: number): Point => {
+      const rect = el!.getBoundingClientRect();
+      return { x: clientX - rect.left, y: clientY - rect.top };
+    };
+
+    const onPointerDown = (ev: PointerEvent) => {
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      activePointer = ev.pointerId;
+      ev.preventDefault();
+      el?.setPointerCapture(ev.pointerId);
+      onGrantPoint(toLocal(ev.clientX, ev.clientY));
+    };
+    const onPointerMove = (ev: PointerEvent) => {
+      if (activePointer !== ev.pointerId) return;
+      ev.preventDefault();
+      onMovePoint(toLocal(ev.clientX, ev.clientY));
+    };
+    const endPointer = (ev: PointerEvent) => {
+      if (activePointer !== ev.pointerId) return;
+      activePointer = null;
+      onReleasePoint();
+    };
+
+    const attach = () => {
+      el = resolvePadElement(padRef, padDomId);
+      if (!el) return false;
+      el.style.touchAction = 'none';
+      el.addEventListener('pointerdown', onPointerDown, { passive: false });
+      el.addEventListener('pointermove', onPointerMove, { passive: false });
+      el.addEventListener('pointerup', endPointer, { passive: false });
+      el.addEventListener('pointercancel', endPointer, { passive: false });
+      return true;
+    };
+
+    let frame = 0;
+    let attempts = 0;
+    const tryAttach = () => {
+      if (attach() || attempts++ > 90) return;
+      frame = requestAnimationFrame(tryAttach);
+    };
+    tryAttach();
+
+    return () => {
+      cancelAnimationFrame(frame);
+      if (!el) return;
+      el.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('pointermove', onPointerMove);
+      el.removeEventListener('pointerup', endPointer);
+      el.removeEventListener('pointercancel', endPointer);
+    };
+  }, [onGrantPoint, onMovePoint, onReleasePoint, padDomId, size]);
 
   const guidePath = useMemo(() => pointsToPath(samples), [samples]);
   const tracePath = trace.length > 1 ? pointsToPath(trace) : '';
   const showGhost = !hideGuides || flashGhost;
 
+  const padView = (
+    <View
+      ref={padRef}
+      nativeID={padDomId}
+      collapsable={false}
+      style={[{ width: size, height: size }, Platform.OS === 'web' && webPad]}
+    >
+      <MiGrid size={size} />
+      <StrokeChar
+        strokes={strokes}
+        size={size}
+        filledCount={strokeIndex}
+        highlightIndex={hideGuides ? -1 : strokeIndex}
+      />
+      <Svg width={size} height={size} style={StyleSheet.absoluteFill} pointerEvents="none">
+        {showGhost && samples.length > 0 && (
+          <>
+            <Path
+              d={guidePath}
+              stroke={Colors.gold}
+              strokeWidth={3}
+              strokeDasharray="2 14"
+              strokeLinecap="round"
+              fill="none"
+            />
+            <Circle
+              cx={samples[0].x}
+              cy={samples[0].y}
+              r={size * 0.035}
+              fill={Colors.vermillion}
+            />
+          </>
+        )}
+        {tracePath !== '' && (
+          <Path
+            d={tracePath}
+            stroke={Colors.ink}
+            strokeWidth={size * 0.08}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+            opacity={0.9}
+          />
+        )}
+      </Svg>
+    </View>
+  );
+
   return (
     <View>
-      <View
-        ref={padRef}
-        style={[{ width: size, height: size }, Platform.OS === 'web' && webPad]}
-        pointerEvents={Platform.OS === 'web' ? 'box-only' : 'auto'}
-        {...(Platform.OS === 'web' ? webTouchHandlers : pan.panHandlers)}
-      >
-        <MiGrid size={size} />
-        <StrokeChar
-          strokes={strokes}
-          size={size}
-          filledCount={strokeIndex}
-          highlightIndex={hideGuides ? -1 : strokeIndex}
-        />
-        <Svg width={size} height={size} style={StyleSheet.absoluteFill} pointerEvents="none">
-          {showGhost && samples.length > 0 && (
-            <>
-              <Path
-                d={guidePath}
-                stroke={Colors.gold}
-                strokeWidth={3}
-                strokeDasharray="2 14"
-                strokeLinecap="round"
-                fill="none"
-              />
-              <Circle
-                cx={samples[0].x}
-                cy={samples[0].y}
-                r={size * 0.035}
-                fill={Colors.vermillion}
-              />
-            </>
-          )}
-          {tracePath !== '' && (
-            <Path
-              d={tracePath}
-              stroke={Colors.ink}
-              strokeWidth={size * 0.08}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-              opacity={0.9}
-            />
-          )}
-        </Svg>
-      </View>
+      {Platform.OS === 'web' ? (
+        padView
+      ) : (
+        <GestureDetector gesture={panGesture}>{padView}</GestureDetector>
+      )}
       <Text style={styles.hint}>{hint}</Text>
     </View>
   );
