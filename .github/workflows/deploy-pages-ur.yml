@@ -39,22 +39,22 @@ jobs:
           NODE_OPTIONS: --max_old_space_size=4096
           EXPO_NO_TELEMETRY: 1
 
-      - name: Stage Urdu build under /ur
+      - name: Stage Urdu build
         run: |
-          mkdir -p pages-root/ur
+          mkdir -p /tmp/ur-build
           shopt -s dotglob
-          mv dist/* pages-root/ur/
-          touch pages-root/ur/.nojekyll
+          mv dist/* /tmp/ur-build/
 
       - name: Export Chinese web build from master
         run: |
-          git stash push -u -m ci || true
           git checkout origin/master
           npm ci
           npx expo export --platform web
+          mkdir -p pages-root/ur
           shopt -s dotglob
           mv dist/* pages-root/
-          touch pages-root/.nojekyll
+          mv /tmp/ur-build/* pages-root/ur/
+          touch pages-root/.nojekyll pages-root/ur/.nojekyll
 
       - uses: actions/upload-pages-artifact@v3
         with:
